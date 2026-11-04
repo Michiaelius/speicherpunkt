@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Speicherpunkt</title>
+<meta name="description" content="Setz einen Speicherpunkt, bevor du aufhörst. Wenn du zurückkommst, zeigt dir Speicherpunkt, wo du warst, und genau einen nächsten Schritt.">
+<meta name="theme-color" content="#eaeee9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1618" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Speicherpunkt">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); color-scheme: light; }
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; }
+[hidden] { display: none !important; }
+
+/* Layout: one calm column; the save point is the object on stage, everything around it stays quiet. */
+:root {
+  --paper: #eaeee9;
+  --surface: #f8faf7;
+  --ink: #14232a;
+  --muted: #56676c;
+  --line: #cfd8d2;
+  --accent: #1d6670;
+  --on-accent: #f4faf8;
+  --gem: #e9a93a;
+  --gem-soft: rgba(233, 169, 58, .16);
+  --accent-soft: rgba(29, 102, 112, .09);
+  --danger: #a5402d;
+  --shadow: 0 1px 2px rgba(20, 35, 42, .06), 0 8px 24px -12px rgba(20, 35, 42, .18);
+  --font-display: ui-rounded, "SF Pro Rounded", "Avenir Next", "Segoe UI Variable Display", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Roboto Mono", monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #0e1618; --surface: #162126; --ink: #e3ebe8; --muted: #93a4a6; --line: #26363b;
+  --accent: #63c3c3; --on-accent: #0b1517; --gem: #f3bf58; --gem-soft: rgba(243, 191, 88, .14);
+  --accent-soft: rgba(99, 195, 195, .10); --danger: #f08a73;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #0e1618; --surface: #162126; --ink: #e3ebe8; --muted: #93a4a6; --line: #26363b;
+  --accent: #63c3c3; --on-accent: #0b1517; --gem: #f3bf58; --gem-soft: rgba(243, 191, 88, .14);
+  --accent-soft: rgba(99, 195, 195, .10); --danger: #f08a73;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6); color-scheme: dark }
+
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+.app { max-width: 560px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 64px; display: flex; flex-direction: column; gap: 22px; }
+h1, h2, h3 { margin: 0; font-family: var(--font-display); font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+p { margin: 0; }
+.mono, .meta { font-family: var(--font-mono); font-size: .78rem; letter-spacing: .01em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--font-mono); font-weight: 500; font-size: .74rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+
+/* header */
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand h1 { font-size: 1.3rem; font-weight: 700; }
+
+/* the save-point gem */
+.gem { width: 14px; height: 14px; flex: none; transform: rotate(45deg); border-radius: 3px; background: linear-gradient(135deg, var(--gem), color-mix(in srgb, var(--gem) 60%, #ffffff)); box-shadow: 0 0 0 4px var(--gem-soft), 0 0 18px var(--gem-soft); }
+.gem.sm { width: 9px; height: 9px; border-radius: 2px; box-shadow: 0 0 0 3px var(--gem-soft); }
+.gem.dim { background: var(--line); box-shadow: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .gem.pulse { animation: pulse 3.2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 4px var(--gem-soft), 0 0 14px var(--gem-soft); } 50% { box-shadow: 0 0 0 7px var(--gem-soft), 0 0 26px var(--gem-soft); } }
+}
+
+/* buttons */
+button { font: inherit; font-size: .98rem; cursor: pointer; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 11px 16px; min-height: 46px; transition: background-color .15s, border-color .15s, transform .1s; }
+button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+button:active { transform: translateY(1px); }
+button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 700; }
+button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
+button.ghost { background: transparent; border-color: transparent; color: var(--muted); padding-inline: 8px; }
+button.ghost:hover { color: var(--ink); border-color: transparent; }
+button.wide { width: 100%; }
+button.add { border-style: dashed; background: transparent; color: var(--accent); font-weight: 700; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--gem); outline-offset: 2px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row.stack { flex-direction: column; }
+.row.stack > button { width: 100%; }
+
+/* hero: the save point you could return to */
+.hero { position: relative; background: var(--surface); border-radius: 20px; padding: 22px 20px 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px; overflow-wrap: anywhere; min-width: 0; }
+.hero .slot { display: flex; align-items: center; gap: 12px; }
+.hero-proj { font-family: var(--font-display); font-size: 1rem; font-weight: 500; color: var(--muted); }
+.hero-step { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.55rem, 6vw, 2rem); line-height: 1.15; letter-spacing: -.02em; }
+.hero .row { margin-top: 4px; }
+.hero.quiet .hero-step { font-size: 1.3rem; }
+
+.banner { display: flex; gap: 12px; align-items: flex-start; border: 1px dashed var(--line); border-radius: var(--r); padding: 12px 14px; color: var(--muted); font-size: .92rem; }
+.tag { font-family: var(--font-mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; padding: 2px 7px; border-radius: 99px; background: var(--gem-soft); color: var(--ink); white-space: nowrap; }
+
+/* project list */
+.group { display: flex; flex-direction: column; gap: 4px; }
+.group > h2, .group > summary { font-family: var(--font-mono); font-weight: 500; font-size: .74rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); padding: 4px 2px 8px; }
+details.group > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+details.group[open] > summary::before { transform: rotate(45deg); }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.proj { text-align: left; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: start; width: 100%; padding: 14px 16px; border-radius: var(--r); background: var(--surface); border-color: transparent; box-shadow: 0 1px 0 var(--line); min-width: 0; }
+.proj .gem { margin-top: 7px; }
+.proj .body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.proj .name { font-family: var(--font-display); font-weight: 700; font-size: 1.02rem; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.proj .step { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj.resting { background: transparent; box-shadow: none; border: 1px solid var(--line); }
+.proj.resting .name { color: var(--muted); }
+
+/* project / return view */
+.stage { display: flex; flex-direction: column; gap: 16px; overflow-wrap: anywhere; min-width: 0; }
+.stage h2.big { font-size: clamp(1.7rem, 7vw, 2.2rem); line-height: 1.1; letter-spacing: -.025em; }
+.welcome { background: var(--gem-soft); border-radius: var(--r); padding: 12px 14px; font-size: .95rem; }
+.where { white-space: pre-wrap; font-size: 1.02rem; padding: 4px 0 4px 16px; border-left: 2px solid var(--line); color: var(--ink); }
+.step-card { background: var(--surface); border-radius: 20px; padding: 18px 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
+.step-card .next { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.35rem, 5.5vw, 1.7rem); line-height: 1.2; letter-spacing: -.015em; }
+.step-card .slot { display: flex; align-items: center; gap: 10px; }
+
+/* history timeline */
+details.history > summary { cursor: pointer; color: var(--muted); font-family: var(--font-mono); font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; padding: 6px 2px; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.history > summary::-webkit-details-marker { display: none; }
+details.history > summary::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+details.history[open] > summary::before { transform: rotate(45deg); }
+.timeline { list-style: none; margin: 10px 0 0; padding: 0 0 0 6px; display: flex; flex-direction: column; }
+.timeline li { position: relative; padding: 0 0 18px 24px; border-left: 1.5px dashed var(--line); display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.timeline li .gem { position: absolute; left: -5.5px; top: 5px; }
+.timeline .was { color: var(--muted); font-size: .95rem; white-space: pre-wrap; }
+.timeline .then { font-size: .95rem; }
+.timeline .then s { color: var(--muted); }
+
+/* panels (forms, menus, settings) */
+.panel { background: var(--surface); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 1px 0 var(--line); overflow-wrap: anywhere; min-width: 0; }
+.panel h2 { font-size: 1.15rem; }
+.panel.big h2 { font-size: clamp(1.45rem, 6vw, 1.8rem); line-height: 1.15; }
+.panel.confirm { box-shadow: 0 0 0 1.5px var(--gem); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+label, .label { font-weight: 700; font-size: .95rem; }
+input[type=text], textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 1.02rem; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+input[type=text]::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 80%, transparent); }
+input[aria-invalid="true"] { border-color: var(--danger); }
+textarea { min-height: 96px; resize: vertical; }
+.hint { color: var(--muted); font-size: .85rem; }
+.error { color: var(--danger); font-size: .9rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border-radius: 99px; min-height: 40px; padding: 8px 14px; background: transparent; font-size: .92rem; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
+/* focus mode */
+.focus { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 18px; overflow-wrap: anywhere; min-width: 0; }
+.focus .next { font-family: var(--font-display); font-weight: 700; font-size: clamp(2rem, 9vw, 2.8rem); line-height: 1.08; letter-spacing: -.03em; }
+.focus .gem { width: 18px; height: 18px; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--paper); padding: 11px 16px; border-radius: 12px; font-size: .92rem; box-shadow: var(--shadow); pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .app > * { animation: rise .28s ease-out both; }
+  @keyframes rise { from { transform: translateY(6px); } to { transform: none; } }
+}
+</style>
+</head>
+<body>
+<noscript><p style="padding:16px">Speicherpunkt braucht JavaScript.</p></noscript>
+<main class="app" id="app" aria-live="polite"></main>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+  const KEY = "speicherpunkt.v1";
+  const DAY = 86400000;
+  const $app = document.getElementById("app");
+  const $toast = document.getElementById("toast");
+
+  // ---------- state ----------
+  let state = { v: 1, projects: [], updated: 0 };
+  let examples = makeExamples();
+  let view = { name: "home" };
+  let storage = "memory"; // memory | local
+  let confirmFor = null;
+
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+  function now() { return Date.now(); }
+
+  function makeExamples() {
+    const t = now();
+    return [
+      { id: "ex1", example: true, name: "Gartenhaus streichen", created: t - 30 * DAY, paused: false, remindAt: t - 1000,
+        saves: [
+          { id: "e1a", at: t - 20 * DAY, where: "Farbe gekauft, Pinsel liegen in der Garage.", next: "Abdeckplane auslegen", done: true },
+          { id: "e1b", at: t - 12 * DAY, where: "Die Südwand ist fertig grundiert. Bei der Tür fehlt noch Klebeband.", next: "Klebeband um den Türrahmen kleben" } ] },
+      { id: "ex2", example: true, name: "Bewerbungsunterlagen", created: t - 9 * DAY, paused: false, remindAt: null,
+        saves: [ { id: "e2a", at: t - 2 * DAY, where: "Lebenslauf aktualisiert bis 2024. Letzte Stelle fehlt noch.", next: "Letzte Stelle mit drei Stichworten eintragen" } ] },
+      { id: "ex3", example: true, name: "Gitarre üben", created: t - 90 * DAY, paused: true, remindAt: null,
+        saves: [ { id: "e3a", at: t - 47 * DAY, where: "Barré-Griff F klappt fast, Saite H schnarrt noch.", next: "Gitarre stimmen und F fünfmal greifen" } ] }
+    ];
+  }
+
+  function projects() { return state.projects.length ? state.projects : examples; }
+  function showingExamples() { return state.projects.length === 0; }
+  function find(id) { return projects().find(p => p.id === id); }
+  function current(p) { return p.saves[p.saves.length - 1]; }
+  function lastTouched(p) { const c = current(p); return c ? c.at : p.created; }
+  function isDue(p) { return !p.paused && p.remindAt && p.remindAt <= now(); }
+
+  // ---------- persistence ----------
+  function readLocal() {
+    try { const raw = localStorage.getItem(KEY); if (!raw) return null; const s = JSON.parse(raw); return valid(s) ? s : null; } catch { return null; }
+  }
+  function writeLocal() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); if (storage === "memory") storage = "local"; return true; } catch { return false; }
+  }
+  function valid(s) { return s && typeof s === "object" && Array.isArray(s.projects); }
+
+  function persist() {
+    state.updated = now();
+    writeLocal();
+  }
+
+  // ---------- helpers ----------
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function ago(ts) {
+    const d = now() - ts;
+    const min = Math.round(d / 60000);
+    if (min < 1) return "gerade eben";
+    if (min < 60) return "vor " + min + (min === 1 ? " Minute" : " Minuten");
+    const h = Math.round(min / 60);
+    const days = Math.floor((startOfDay(now()) - startOfDay(ts)) / DAY);
+    if (days === 0) return "heute";
+    if (days === 1) return "gestern";
+    if (days < 14) return "vor " + days + " Tagen";
+    const w = Math.round(days / 7);
+    if (days < 60) return "vor " + w + " Wochen";
+    const m = Math.round(days / 30);
+    if (days < 365) return "vor " + m + " Monaten";
+    const y = Math.round(days / 365);
+    return "vor " + y + (y === 1 ? " Jahr" : " Jahren");
+  }
+  function startOfDay(ts) { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  const fmtDate = new Intl.DateTimeFormat("de-CH", { weekday: "short", day: "numeric", month: "short" });
+  const fmtTime = new Intl.DateTimeFormat("de-CH", { hour: "2-digit", minute: "2-digit" });
+  function stamp(ts) { return fmtDate.format(ts) + " · " + fmtTime.format(ts); }
+  function remindLabel(ts) {
+    const days = Math.round((startOfDay(ts) - startOfDay(now())) / DAY);
+    if (days <= 0) return "heute";
+    if (days === 1) return "morgen";
+    return "am " + fmtDate.format(ts);
+  }
+  function toast(msg) {
+    $toast.textContent = msg; $toast.hidden = false;
+    clearTimeout(toast.t); toast.t = setTimeout(() => { $toast.hidden = true; }, 3200);
+  }
+  function suggestion() {
+    const act = projects().filter(p => !p.paused);
+    if (!act.length) return null;
+    const due = act.filter(isDue).sort((a, b) => a.remindAt - b.remindAt);
+    if (due.length) return due[0];
+    return act.slice().sort((a, b) => lastTouched(b) - lastTouched(a))[0];
+  }
+  const REMIND = [
+    { k: "none", label: "Nicht erinnern" },
+    { k: "1", label: "Morgen" },
+    { k: "3", label: "In 3 Tagen" },
+    { k: "7", label: "In einer Woche" }
+  ];
+  function remindFrom(k) {
+    if (k === "none" || !k) return null;
+    const d = startOfDay(now()) + Number(k) * DAY + 8 * 3600000;
+    return d;
+  }
+
+  // ---------- views ----------
+  function render() {
+    const fn = VIEWS[view.name] || VIEWS.home;
+    $app.innerHTML = fn();
+    const f = $app.querySelector("[data-autofocus]");
+    if (f) f.focus({ preventScroll: false });
+  }
+
+  const VIEWS = {
+    home() {
+      const list = projects();
+      const s = suggestion();
+      const due = list.filter(isDue).filter(p => p !== s);
+      const active = list.filter(p => !p.paused && p !== s).sort((a, b) => lastTouched(b) - lastTouched(a));
+      const resting = list.filter(p => p.paused).sort((a, b) => lastTouched(b) - lastTouched(a));
+      let h = `<header class="top"><div class="brand"><span class="gem" aria-hidden="true"></span><h1>Speicherpunkt</h1></div><button class="ghost" data-action="settings">Einstellungen</button></header>`;
+      if (showingExamples()) h += `<p class="banner" id="examples-note"><span class="tag">Beispiel</span><span>So sieht es aus, wenn du ein paar Projekte hast. Sobald du dein erstes eigenes anlegst, verschwinden die Beispiele.</span></p>`;
+      if (s) {
+        const c = current(s);
+        h += `<section class="hero" aria-labelledby="sug-h">
+          <div class="slot"><span class="gem${isDue(s) ? " pulse" : ""}" aria-hidden="true"></span><h2 id="sug-h" class="eyebrow">${isDue(s) ? "Sanfte Erinnerung" : "Hier könntest du weitermachen"}</h2></div>
+          <div><p class="hero-proj">${esc(s.name)}</p><p class="mono">Gespeichert ${esc(ago(lastTouched(s)))} · Speicherpunkt ${s.saves.length}</p></div>
+          <p class="hero-step">${esc(c ? c.next : "Ersten Schritt festlegen")}</p>
+          <div class="row"><button class="primary" data-action="open" data-id="${esc(s.id)}">Weitermachen</button>
+          ${isDue(s) ? `<button data-action="snooze" data-id="${esc(s.id)}">Morgen wieder</button>` : ""}</div>
+        </section>`;
+      } else if (!list.length) {
+        h += `<section class="hero quiet"><div class="slot"><span class="gem dim" aria-hidden="true"></span><h2 class="eyebrow">Noch leer</h2></div><p class="hero-step">Leg ein Projekt an und setz deinen ersten Speicherpunkt.</p></section>`;
+      } else {
+        h += `<section class="hero quiet"><div class="slot"><span class="gem dim" aria-hidden="true"></span><h2 class="eyebrow">Alles ruht gerade</h2></div><p class="hero-step">Das ist in Ordnung. Wenn du so weit bist, weck ein Projekt auf.</p></section>`;
+      }
+      h += `<button class="add wide" data-action="new">+ Neues Projekt</button>`;
+      const others = due.concat(active.filter(p => !due.includes(p)));
+      if (others.length) {
+        h += `<section class="group" aria-labelledby="all-h"><h2 id="all-h">Weitere Projekte</h2><div class="list">${others.map(projRow).join("")}</div></section>`;
+      }
+      if (resting.length) {
+        h += `<details class="group"${others.length || !s ? " open" : ""}><summary>Ruhen gerade (${resting.length})</summary><div class="list">${resting.map(projRow).join("")}</div></details>`;
+      }
+      return h;
+    },
+
+    project() {
+      const p = find(view.id); if (!p) { view = { name: "home" }; return VIEWS.home(); }
+      const c = current(p);
+      const past = p.saves.slice(0, -1).reverse();
+      let h = `<header class="top"><button class="ghost" data-action="home">← Übersicht</button><button class="ghost" data-action="menu" data-id="${esc(p.id)}" aria-expanded="${view.menu ? "true" : "false"}">Mehr</button></header>`;
+      h += `<section class="stage" aria-labelledby="p-h">
+        <div class="meta">${esc(p.name)}${p.example ? " · Beispiel" : ""}${p.paused ? " · ruht" : ""}</div>
+        <h2 id="p-h" class="big">Hier warst du stehen geblieben</h2>
+        ${c && !p.paused && now() - c.at > 7 * DAY ? `<p class="welcome" id="welcome">Schön, dass du wieder da bist. Du musst nichts aufholen, nur diesen einen Schritt.</p>` : ""}
+        ${c ? `${c.where ? `<p class="where">${esc(c.where)}</p>` : ""}
+        <div class="step-card">
+          <div class="slot"><span class="gem sm" aria-hidden="true"></span><span class="eyebrow">Dein nächster Mini-Schritt</span></div>
+          <p class="next" id="next-step">${esc(c.next)}</p>
+          <p class="mono">Speicherpunkt ${p.saves.length} · ${esc(stamp(c.at))} · ${esc(ago(c.at))}${p.remindAt && !p.paused ? ` · Erinnerung ${esc(remindLabel(p.remindAt))}` : ""}</p>
+        </div>` : `<p>Noch kein Speicherpunkt.</p>`}
+      </section>`;
+      if (view.edit && c) {
+        h += `<form class="panel" data-form="edit-step">
+          <div class="field"><label for="f-step">Schritt kleiner machen</label>
+          <input type="text" id="f-step" name="next" value="${esc(c.next)}" maxlength="200" required data-autofocus>
+          <div class="hint">So klein, dass er fast lächerlich ist. Zum Beispiel nur die Datei öffnen.</div></div>
+          <div class="row"><button class="primary" type="submit">Übernehmen</button><button type="button" data-action="cancel-edit">Abbrechen</button></div>
+        </form>`;
+      } else if (p.paused) {
+        h += `<div class="row"><button class="primary" data-action="resume" data-id="${esc(p.id)}">Aufwecken</button></div>`;
+      } else {
+        h += `<div class="row stack">
+          <button class="primary" data-action="start" data-id="${esc(p.id)}" ${c ? "" : "disabled"}>Ich fange an</button>
+          <div class="row"><button data-action="edit" ${c ? "" : "disabled"}>Schritt kleiner machen</button>
+          <button data-action="save" data-id="${esc(p.id)}">Neuer Speicherpunkt</button></div></div>`;
+      }
+      if (view.menu) h += menuHtml(p);
+      if (past.length) {
+        h += `<details class="history"><summary>Frühere Speicherpunkte (${past.length})</summary><ol class="timeline" reversed>${past.map(sv => `<li>
+          <span class="gem sm${sv.done ? "" : " dim"}" aria-hidden="true"></span>
+          <span class="mono">${esc(stamp(sv.at))}${sv.done ? " · erledigt" : ""}</span>
+          ${sv.where ? `<p class="was">${esc(sv.where)}</p>` : ""}
+          <p class="then">Nächster Schritt: ${sv.done ? `<s>${esc(sv.next)}</s>` : esc(sv.next)}</p></li>`).join("")}</ol></details>`;
+      }
+      return h;
+    },
+
+    focus() {
+      const p = find(view.id); if (!p) { view = { name: "home" }; return VIEWS.home(); }
+      const c = current(p);
+      const mins = Math.max(0, Math.floor((now() - view.since) / 60000));
+      return `<header class="top"><button class="ghost" data-action="open" data-id="${esc(p.id)}">← Zurück</button></header>
+      <section class="focus" aria-labelledby="f-h">
+        <span class="gem pulse" aria-hidden="true"></span>
+        <h2 id="f-h" class="eyebrow">Nur das hier · ${esc(p.name)}</h2>
+        <p class="next">${esc(c.next)}</p>
+        <p class="mono" id="since">${mins < 1 ? "Gerade angefangen" : "Seit " + mins + (mins === 1 ? " Minute" : " Minuten") + " dabei"}</p>
+      </section>
+      <div class="row stack"><button class="primary" data-action="done" data-id="${esc(p.id)}">Geschafft</button>
+      <button data-action="save" data-id="${esc(p.id)}">Unterbrechen und speichern</button></div>`;
+    },
+
+    save() {
+      const isNew = view.isNew;
+      const p = isNew ? null : find(view.id);
+      if (!isNew && !p) { view = { name: "home" }; return VIEWS.home(); }
+      const c = p ? current(p) : null;
+      const draft = view.draft || {};
+      const rk = draft.remind || (p && p.remindAt ? "none" : "none");
+      return `<header class="top"><button class="ghost" data-action="${isNew ? "home" : "open"}" ${p ? `data-id="${esc(p.id)}"` : ""}>← Abbrechen</button></header>
+      <form class="panel big" data-form="save" novalidate>
+        <h2>${isNew ? "Neues Projekt" : view.afterDone ? "Geschafft. Was kommt als Nächstes?" : "Speicherpunkt setzen"}</h2>
+        ${p ? `<div class="meta">${esc(p.name)}</div>` : ""}
+        ${isNew ? `<div class="field"><label for="f-name">Wie heisst das Projekt?</label>
+          <input type="text" id="f-name" name="name" maxlength="80" value="${esc(draft.name || "")}" data-autofocus placeholder="z. B. Steuererklärung"></div>` : ""}
+        <div class="field"><label for="f-where">Wo stehst du gerade?</label>
+          <textarea id="f-where" name="where" maxlength="1000" placeholder="Ein, zwei Sätze für dein zukünftiges Ich." ${isNew ? "" : "data-autofocus"}>${esc(draft.where || "")}</textarea>
+          <div class="hint">Optional. Auf dem Handy kannst du mit dem Mikrofon der Tastatur diktieren.</div></div>
+        <div class="field"><label for="f-next">Nächster Mini-Schritt</label>
+          <input type="text" id="f-next" name="next" maxlength="200" value="${esc(draft.next || "")}" placeholder="So klein, dass er fast lächerlich ist">
+          <div class="error" id="err" ${view.err ? "" : "hidden"}>${esc(view.err || "")}</div></div>
+        <div class="field"><span class="label" id="r-l">Erinnern</span>
+          <div class="chips" role="group" aria-labelledby="r-l">${REMIND.map(r => `<button type="button" class="chip" data-action="remind" data-k="${r.k}" aria-pressed="${rk === r.k}">${r.label}</button>`).join("")}</div>
+          <div class="hint">Die Erinnerung erscheint hier in der App. Benachrichtigungen aufs Handy kommen in einer späteren Version.</div></div>
+        <button class="primary wide" type="submit">Speichern</button>
+      </form>`;
+    },
+
+    settings() {
+      const where = storage === "local" ? "nur auf diesem Gerät, in diesem Browser. Niemand sonst sieht sie, auch kein Server. Mach ab und zu eine Sicherung, besonders bevor du das Gerät wechselst." : "nur vorübergehend. Dieser Browser erlaubt kein Speichern (zum Beispiel im privaten Modus), mach deshalb eine Sicherung.";
+      return `<header class="top"><button class="ghost" data-action="home">← Übersicht</button></header>
+      <section class="panel"><h2>Speicherort</h2><p id="storage-info">Deine Daten liegen ${where}</p></section>
+      <section class="panel"><h2>Als App installieren</h2>
+        <p><strong>iPhone:</strong> In Safari auf Teilen tippen, dann „Zum Home-Bildschirm“.</p>
+        <p><strong>Android:</strong> In Chrome im Menü „App installieren“ oder „Zum Startbildschirm hinzufügen“.</p>
+        <p class="hint">Danach öffnet sich Speicherpunkt wie eine normale App und funktioniert auch ohne Internet.</p></section>
+      <section class="panel"><h2>Sicherung</h2>
+        <p>Kopiert alle Projekte als Text. Leg ihn irgendwo ab, etwa in einer Notiz, und füge ihn auf einem anderen Gerät wieder ein.</p>
+        <div class="row"><button data-action="export">Sicherung kopieren</button></div>
+        <textarea id="f-export" readonly hidden aria-label="Sicherung als Text"></textarea>
+      </section>
+      <form class="panel" data-form="import"><h2>Sicherung einfügen</h2>
+        <label for="f-import">Sicherungstext</label>
+        <textarea id="f-import" name="data" placeholder="Hier den kopierten Text einfügen"></textarea>
+        <div class="error" id="imp-err" ${view.err ? "" : "hidden"}>${esc(view.err || "")}</div>
+        ${view.importConfirm ? `<p id="imp-confirm">Das ersetzt deine ${state.projects.length} Projekte durch die Sicherung. Fortfahren?</p>
+        <div class="row"><button class="primary" type="submit">Ja, ersetzen</button><button type="button" data-action="imp-no">Abbrechen</button></div>`
+        : `<div class="row"><button type="submit">Einfügen und ersetzen</button></div>`}
+      </form>
+      <section class="panel"><h2>Alles löschen</h2>
+        ${confirmFor === "wipe" ? `<p>Wirklich alle Projekte löschen? Das lässt sich nicht rückgängig machen.</p>
+          <div class="row"><button class="primary" data-action="wipe-yes">Ja, alles löschen</button><button data-action="wipe-no">Abbrechen</button></div>`
+        : `<div class="row"><button data-action="wipe">Alle Projekte löschen</button></div>`}
+      </section>`;
+    }
+  };
+
+  function projRow(p) {
+    const c = current(p);
+    return `<button class="proj${p.paused ? " resting" : ""}" data-action="open" data-id="${esc(p.id)}">
+      <span class="gem sm${p.paused ? " dim" : ""}" aria-hidden="true"></span>
+      <span class="body"><span class="name">${esc(p.name)}${isDue(p) ? ` <span class="tag">Erinnerung</span>` : ""}</span>
+      <span class="step">${esc(c ? c.next : "Noch kein Schritt")}</span>
+      <span class="meta">${esc(ago(lastTouched(p)))} · ${p.saves.length} ${p.saves.length === 1 ? "Speicherpunkt" : "Speicherpunkte"}</span></span></button>`;
+  }
+
+  function menuHtml(p) {
+    if (confirmFor === "del:" + p.id) {
+      return `<section class="panel confirm"><p>Projekt „${esc(p.name)}“ mit allen Speicherpunkten löschen?</p>
+        <div class="row"><button class="primary" data-action="del-yes" data-id="${esc(p.id)}">Ja, löschen</button><button data-action="del-no">Abbrechen</button></div></section>`;
+    }
+    if (view.rename) {
+      return `<form class="panel" data-form="rename"><div class="field"><label for="f-rename">Neuer Name</label>
+        <input type="text" id="f-rename" name="name" value="${esc(p.name)}" maxlength="80" data-autofocus></div>
+        <div class="row"><button class="primary" type="submit">Umbenennen</button><button type="button" data-action="menu-close">Abbrechen</button></div></form>`;
+    }
+    return `<section class="panel"><div class="row">
+      ${p.paused ? `<button data-action="resume" data-id="${esc(p.id)}">Aufwecken</button>` : `<button data-action="pause" data-id="${esc(p.id)}">Ruhen lassen</button>`}
+      <button data-action="rename">Umbenennen</button>
+      <button data-action="del" data-id="${esc(p.id)}">Löschen</button>
+      <button class="ghost" data-action="menu-close">Schliessen</button></div>
+      <p class="hint">Ruhen lassen heisst: kein Druck, keine Erinnerungen. Das Projekt wartet einfach.</p></section>`;
+  }
+
+  // ---------- mutations ----------
+  function commit() { if (!showingExamplesOnly()) persist(); }
+  function showingExamplesOnly() { return state.projects.length === 0; }
+
+  function readSaveForm(form) {
+    return {
+      name: form.querySelector("#f-name") ? form.querySelector("#f-name").value.trim() : "",
+      where: form.querySelector("#f-where").value.trim(),
+      next: form.querySelector("#f-next").value.trim(),
+      remind: (view.draft && view.draft.remind) || "none"
+    };
+  }
+
+  function handleSave(form) {
+    const d = readSaveForm(form);
+    view.draft = d;
+    if (view.isNew && !d.name) { view.err = ""; return fieldError("f-name", "Gib dem Projekt einen Namen."); }
+    if (!d.next) return fieldError("f-next", "Schreib einen kleinen nächsten Schritt auf, damit du später leicht wieder einsteigst.");
+    const save = { id: uid(), at: now(), where: d.where, next: d.next };
+    let p;
+    if (view.isNew) {
+      p = { id: uid(), name: d.name, created: now(), paused: false, remindAt: remindFrom(d.remind), saves: [save] };
+      state.projects.push(p);
+      persist();
+      view = { name: "home" }; render();
+      toast("Projekt angelegt. Dein Speicherpunkt ist gesichert.");
+      return;
+    }
+    p = find(view.id);
+    if (view.afterDone) { const c = current(p); if (c) c.done = true; }
+    p.saves.push(save);
+    p.remindAt = remindFrom(d.remind);
+    p.paused = false;
+    commit();
+    view = { name: "home" }; render();
+    toast(p.example ? "Gespeichert (Beispiel, wird nicht dauerhaft gesichert)." : "Gespeichert. Hier geht es weiter, wann immer du bereit bist.");
+  }
+
+  function fieldError(id, msg) {
+    const err = $app.querySelector("#err");
+    if (id === "f-name") {
+      let e = $app.querySelector("#name-err");
+      if (!e) { e = document.createElement("div"); e.className = "error"; e.id = "name-err"; $app.querySelector("#f-name").after(e); }
+      e.textContent = msg;
+    } else if (err) { err.textContent = msg; err.hidden = false; }
+    const el = $app.querySelector("#" + id); if (el) { el.setAttribute("aria-invalid", "true"); el.focus(); }
+  }
+
+  // ---------- events ----------
+  $app.addEventListener("click", e => {
+    const b = e.target.closest("[data-action]"); if (!b || b.disabled) return;
+    const a = b.dataset.action, id = b.dataset.id;
+    switch (a) {
+      case "home": view = { name: "home" }; confirmFor = null; render(); window.scrollTo(0, 0); break;
+      case "settings": view = { name: "settings" }; confirmFor = null; render(); window.scrollTo(0, 0); break;
+      case "open": view = { name: "project", id }; confirmFor = null; render(); window.scrollTo(0, 0); break;
+      case "new": view = { name: "save", isNew: true, draft: { remind: "3" } }; render(); window.scrollTo(0, 0); break;
+      case "save": { const p = find(id), c = p && current(p); view = { name: "save", id, draft: { remind: "3", next: c && !c.done ? c.next : "" } }; render(); window.scrollTo(0, 0); break; }
+      case "start": { const p = find(id); if (p) { p.remindAt = null; commit(); } view = { name: "focus", id, since: now() }; render(); window.scrollTo(0, 0); break; }
+      case "done": view = { name: "save", id, afterDone: true, draft: { remind: "none" } }; render(); window.scrollTo(0, 0); break;
+      case "edit": view.edit = true; render(); break;
+      case "cancel-edit": view.edit = false; render(); break;
+      case "snooze": { const p = find(id); if (p) { p.remindAt = startOfDay(now()) + DAY + 8 * 3600000; commit(); render(); toast("Alles klar, morgen wieder."); } break; }
+      case "menu": view.menu = !view.menu; view.rename = false; confirmFor = null; render(); break;
+      case "menu-close": view.menu = false; view.rename = false; confirmFor = null; render(); break;
+      case "pause": { const p = find(id); p.paused = true; p.remindAt = null; commit(); view.menu = false; render(); toast("Das Projekt ruht. Es wartet einfach auf dich."); break; }
+      case "resume": { const p = find(id); p.paused = false; commit(); view.menu = false; render(); toast("Willkommen zurück."); break; }
+      case "rename": view.rename = true; render(); break;
+      case "del": confirmFor = "del:" + id; render(); break;
+      case "del-no": confirmFor = null; render(); break;
+      case "del-yes": {
+        if (find(id) && find(id).example) { examples = examples.filter(p => p.id !== id); }
+        else { state.projects = state.projects.filter(p => p.id !== id); persist(); }
+        confirmFor = null; view = { name: "home" }; render(); toast("Projekt gelöscht."); break;
+      }
+      case "remind": {
+        const form = b.closest("form"); if (form) view.draft = Object.assign(readSaveForm(form), { remind: b.dataset.k });
+        form.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c === b)));
+        break;
+      }
+      case "export": {
+        const txt = JSON.stringify(state);
+        const ta = $app.querySelector("#f-export");
+        const done = () => toast("Sicherung kopiert.");
+        const fallback = () => { ta.hidden = false; ta.value = txt; ta.focus(); ta.select(); toast("Text markiert. Kopiere ihn von Hand."); };
+        try { navigator.clipboard.writeText(txt).then(done, fallback); } catch { fallback(); }
+        break;
+      }
+      case "wipe": confirmFor = "wipe"; render(); break;
+      case "imp-no": { view = { name: "settings" }; render(); break; }
+      case "wipe-no": confirmFor = null; render(); break;
+      case "wipe-yes": state = { v: 1, projects: [], updated: 0 }; examples = makeExamples(); persist(); confirmFor = null; view = { name: "home" }; render(); toast("Alles gelöscht."); break;
+    }
+  });
+
+  $app.addEventListener("submit", e => {
+    e.preventDefault();
+    const form = e.target, kind = form.dataset.form;
+    if (kind === "save") handleSave(form);
+    else if (kind === "edit-step") {
+      const p = find(view.id), v = form.querySelector("#f-step").value.trim();
+      if (!v) return;
+      current(p).next = v; commit(); view.edit = false; render(); toast("Schritt angepasst.");
+    } else if (kind === "rename") {
+      const p = find(view.id), v = form.querySelector("#f-rename").value.trim();
+      if (!v) return;
+      p.name = v; commit(); view.menu = false; view.rename = false; render(); toast("Umbenannt.");
+    } else if (kind === "import") {
+      const raw = form.querySelector("#f-import").value.trim();
+      let s = null; try { s = JSON.parse(raw); } catch {}
+      if (!valid(s)) { view = { name: "settings", err: "Das sieht nicht nach einer Sicherung aus. Füge den ganzen kopierten Text ein." }; render(); return; }
+      if (state.projects.length && !view.importConfirm) { view = { name: "settings", importConfirm: true, pending: raw }; render(); $app.querySelector("#f-import").value = raw; return; }
+      state = { v: 1, projects: s.projects, updated: 0 }; persist(); view = { name: "home" }; render(); toast("Sicherung eingefügt.");
+    }
+  });
+
+  $app.addEventListener("input", e => {
+    if (e.target.matches("[aria-invalid]")) e.target.removeAttribute("aria-invalid");
+  });
+
+  // live minute counter in focus view
+  setInterval(() => {
+    if (view.name === "focus") { const el = $app.querySelector("#since"); if (el) { const mins = Math.floor((now() - view.since) / 60000); el.textContent = mins < 1 ? "Gerade angefangen" : "Seit " + mins + (mins === 1 ? " Minute" : " Minuten") + " dabei"; } }
+  }, 15000);
+
+  // ---------- boot ----------
+  const local = readLocal();
+  if (local) { state = local; storage = "local"; }
+  render();
+  // installierbare App: Offline-Cache und dauerhafter Speicher
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  }
+  if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(() => {}); }
+  // Mehrere Tabs: Änderungen aus einem anderen Tab übernehmen
+  window.addEventListener("storage", e => { if (e.key === KEY) { const s = readLocal(); if (s) { state = s; render(); } } });
+})();
+</script>
+</body>
+</html>
