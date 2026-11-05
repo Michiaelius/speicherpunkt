@@ -1,6 +1,6 @@
 // Speicherpunkt: Offline-Cache. Bei jeder neuen Version VERSION erhöhen.
-const VERSION = "sp-v2";
-const FILES = ["./", "index.html", "manifest.webmanifest", "icons/favicon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
+const VERSION = "sp-v3";
+const FILES = ["./", "index.html", "manifest.webmanifest", "icons/favicon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "fonts/lora.woff2", "fonts/lora-italic.woff2", "fonts/inter-400.woff2", "fonts/inter-500.woff2", "fonts/inter-600.woff2"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
