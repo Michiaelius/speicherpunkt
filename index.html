@@ -160,6 +160,11 @@ textarea { min-height: 96px; resize: vertical; }
 .focus .next { font-family: var(--font-display); font-weight: 700; font-size: clamp(2rem, 9vw, 2.8rem); line-height: 1.08; letter-spacing: -.03em; }
 .focus .gem { width: 18px; height: 18px; }
 
+.finish-offer { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: var(--r); background: var(--gem-soft); }
+.finish-offer p:first-child { font-weight: 700; }
+button.finish-btn { align-self: flex-start; background: var(--gem); border-color: var(--gem); color: #1b1407; font-weight: 700; }
+.done-stage { min-height: 46vh; }
+.proj.finished .gem { box-shadow: none; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--paper); padding: 11px 16px; border-radius: 12px; font-size: .92rem; box-shadow: var(--shadow); pointer-events: none; }
 @media (prefers-reduced-motion: no-preference) {
   .app > * { animation: rise .28s ease-out both; }
@@ -209,7 +214,8 @@ textarea { min-height: 96px; resize: vertical; }
   function find(id) { return projects().find(p => p.id === id); }
   function current(p) { return p.saves[p.saves.length - 1]; }
   function lastTouched(p) { const c = current(p); return c ? c.at : p.created; }
-  function isDue(p) { return !p.paused && p.remindAt && p.remindAt <= now(); }
+  function isDue(p) { return !p.paused && !p.finished && p.remindAt && p.remindAt <= now(); }
+  const fmtDay = new Intl.DateTimeFormat("de-CH", { day: "numeric", month: "long", year: "numeric" });
 
   // ---------- persistence ----------
   function readLocal() {
@@ -259,7 +265,7 @@ textarea { min-height: 96px; resize: vertical; }
     clearTimeout(toast.t); toast.t = setTimeout(() => { $toast.hidden = true; }, 3200);
   }
   function suggestion() {
-    const act = projects().filter(p => !p.paused);
+    const act = projects().filter(p => !p.paused && !p.finished);
     if (!act.length) return null;
     const due = act.filter(isDue).sort((a, b) => a.remindAt - b.remindAt);
     if (due.length) return due[0];
@@ -290,8 +296,9 @@ textarea { min-height: 96px; resize: vertical; }
       const list = projects();
       const s = suggestion();
       const due = list.filter(isDue).filter(p => p !== s);
-      const active = list.filter(p => !p.paused && p !== s).sort((a, b) => lastTouched(b) - lastTouched(a));
-      const resting = list.filter(p => p.paused).sort((a, b) => lastTouched(b) - lastTouched(a));
+      const active = list.filter(p => !p.paused && !p.finished && p !== s).sort((a, b) => lastTouched(b) - lastTouched(a));
+      const resting = list.filter(p => p.paused && !p.finished).sort((a, b) => lastTouched(b) - lastTouched(a));
+      const finished = list.filter(p => p.finished).sort((a, b) => b.finished - a.finished);
       let h = `<header class="top"><div class="brand"><span class="gem" aria-hidden="true"></span><h1>Speicherpunkt</h1></div><button class="ghost" data-action="settings">Einstellungen</button></header>`;
       if (showingExamples()) h += `<p class="banner" id="examples-note"><span class="tag">Beispiel</span><span>So sieht es aus, wenn du ein paar Projekte hast. Sobald du dein erstes eigenes anlegst, verschwinden die Beispiele.</span></p>`;
       if (s) {
@@ -303,7 +310,9 @@ textarea { min-height: 96px; resize: vertical; }
           <div class="row"><button class="primary" data-action="open" data-id="${esc(s.id)}">Weitermachen</button>
           ${isDue(s) ? `<button data-action="snooze" data-id="${esc(s.id)}">Morgen wieder</button>` : ""}</div>
         </section>`;
-      } else if (!list.length) {
+      } else if (!list.length || (finished.length === list.length)) {
+        if (finished.length) h += `<section class="hero quiet"><div class="slot"><span class="gem" aria-hidden="true"></span><h2 class="eyebrow">Alles abgeschlossen</h2></div><p class="hero-step">Starke Leistung. Leg ein neues Projekt an, wenn dir danach ist.</p></section>`;
+        else
         h += `<section class="hero quiet"><div class="slot"><span class="gem dim" aria-hidden="true"></span><h2 class="eyebrow">Noch leer</h2></div><p class="hero-step">Leg ein Projekt an und setz deinen ersten Speicherpunkt.</p></section>`;
       } else {
         h += `<section class="hero quiet"><div class="slot"><span class="gem dim" aria-hidden="true"></span><h2 class="eyebrow">Alles ruht gerade</h2></div><p class="hero-step">Das ist in Ordnung. Wenn du so weit bist, weck ein Projekt auf.</p></section>`;
@@ -316,11 +325,15 @@ textarea { min-height: 96px; resize: vertical; }
       if (resting.length) {
         h += `<details class="group"${others.length || !s ? " open" : ""}><summary>Ruhen gerade (${resting.length})</summary><div class="list">${resting.map(projRow).join("")}</div></details>`;
       }
+      if (finished.length) {
+        h += `<details class="group" id="finished-group"><summary>Abgeschlossen (${finished.length})</summary><div class="list">${finished.map(projRow).join("")}</div></details>`;
+      }
       return h;
     },
 
     project() {
       const p = find(view.id); if (!p) { view = { name: "home" }; return VIEWS.home(); }
+      if (p.finished) return VIEWS.finished();
       const c = current(p);
       const past = p.saves.slice(0, -1).reverse();
       let h = `<header class="top"><button class="ghost" data-action="home">← Übersicht</button><button class="ghost" data-action="menu" data-id="${esc(p.id)}" aria-expanded="${view.menu ? "true" : "false"}">Mehr</button></header>`;
@@ -356,8 +369,26 @@ textarea { min-height: 96px; resize: vertical; }
           <span class="gem sm${sv.done ? "" : " dim"}" aria-hidden="true"></span>
           <span class="mono">${esc(stamp(sv.at))}${sv.done ? " · erledigt" : ""}</span>
           ${sv.where ? `<p class="was">${esc(sv.where)}</p>` : ""}
-          <p class="then">Nächster Schritt: ${sv.done ? `<s>${esc(sv.next)}</s>` : esc(sv.next)}</p></li>`).join("")}</ol></details>`;
+          ${sv.final ? "" : `<p class="then">Nächster Schritt: ${sv.done ? `<s>${esc(sv.next)}</s>` : esc(sv.next)}</p>`}</li>`).join("")}</ol></details>`;
       }
+      return h;
+    },
+
+    finished() {
+      const p = find(view.id); if (!p) { view = { name: "home" }; return VIEWS.home(); }
+      const c = current(p);
+      const days = Math.max(1, Math.round((startOfDay(p.finished) - startOfDay(p.created)) / DAY) + 1);
+      let h = `<header class="top"><button class="ghost" data-action="home">← Übersicht</button><button class="ghost" data-action="menu" data-id="${esc(p.id)}" aria-expanded="${view.menu ? "true" : "false"}">Mehr</button></header>
+      <section class="focus done-stage" aria-labelledby="fin-h">
+        <span class="gem" aria-hidden="true"></span>
+        <h2 id="fin-h" class="eyebrow">Abgeschlossen · ${esc(fmtDay.format(p.finished))}</h2>
+        <p class="next">${esc(p.name)}</p>
+        <p class="mono" id="fin-stats">${p.saves.length} ${p.saves.length === 1 ? "Speicherpunkt" : "Speicherpunkte"} · ${days} ${days === 1 ? "Tag" : "Tage"} vom Start bis zum Ziel</p>
+        ${c && c.where ? `<p class="where">${esc(c.where)}</p>` : ""}
+      </section>
+      <div class="row stack"><button class="primary" data-action="home">Zur Übersicht</button>
+      <button data-action="reopen" data-id="${esc(p.id)}">Wieder öffnen</button></div>`;
+      if (view.menu) h += menuHtml(p);
       return h;
     },
 
@@ -385,8 +416,11 @@ textarea { min-height: 96px; resize: vertical; }
       const rk = draft.remind || (p && p.remindAt ? "none" : "none");
       return `<header class="top"><button class="ghost" data-action="${isNew ? "home" : "open"}" ${p ? `data-id="${esc(p.id)}"` : ""}>← Abbrechen</button></header>
       <form class="panel big" data-form="save" novalidate>
-        <h2>${isNew ? "Neues Projekt" : view.afterDone ? "Geschafft. Was kommt als Nächstes?" : "Speicherpunkt setzen"}</h2>
+        <h2>${isNew ? "Neues Projekt" : view.reopen ? "Wieder öffnen: Wie geht es weiter?" : view.afterDone ? "Geschafft. Was kommt als Nächstes?" : "Speicherpunkt setzen"}</h2>
         ${p ? `<div class="meta">${esc(p.name)}</div>` : ""}
+        ${view.afterDone ? `<div class="finish-offer"><p>War das der letzte Schritt?</p>
+          <button type="button" class="finish-btn" data-action="finish" data-id="${esc(p.id)}">Projekt abschliessen</button>
+          <p class="hint">Sonst halte unten fest, wie es weitergeht.</p></div>` : ""}
         ${isNew ? `<div class="field"><label for="f-name">Wie heisst das Projekt?</label>
           <input type="text" id="f-name" name="name" maxlength="80" value="${esc(draft.name || "")}" data-autofocus placeholder="z. B. Steuererklärung"></div>` : ""}
         <div class="field"><label for="f-where">Wo stehst du gerade?</label>
@@ -433,6 +467,12 @@ textarea { min-height: 96px; resize: vertical; }
 
   function projRow(p) {
     const c = current(p);
+    if (p.finished) {
+      return `<button class="proj resting finished" data-action="open" data-id="${esc(p.id)}">
+      <span class="gem sm" aria-hidden="true"></span>
+      <span class="body"><span class="name">${esc(p.name)}</span>
+      <span class="meta">Abgeschlossen am ${esc(fmtDay.format(p.finished))} · ${p.saves.length} ${p.saves.length === 1 ? "Speicherpunkt" : "Speicherpunkte"}</span></span></button>`;
+    }
     return `<button class="proj${p.paused ? " resting" : ""}" data-action="open" data-id="${esc(p.id)}">
       <span class="gem sm${p.paused ? " dim" : ""}" aria-hidden="true"></span>
       <span class="body"><span class="name">${esc(p.name)}${isDue(p) ? ` <span class="tag">Erinnerung</span>` : ""}</span>
@@ -450,12 +490,20 @@ textarea { min-height: 96px; resize: vertical; }
         <input type="text" id="f-rename" name="name" value="${esc(p.name)}" maxlength="80" data-autofocus></div>
         <div class="row"><button class="primary" type="submit">Umbenennen</button><button type="button" data-action="menu-close">Abbrechen</button></div></form>`;
     }
+    if (p.finished) {
+      return `<section class="panel"><div class="row">
+      <button data-action="reopen" data-id="${esc(p.id)}">Wieder öffnen</button>
+      <button data-action="rename">Umbenennen</button>
+      <button data-action="del" data-id="${esc(p.id)}">Löschen</button>
+      <button class="ghost" data-action="menu-close">Schliessen</button></div></section>`;
+    }
     return `<section class="panel"><div class="row">
+      <button data-action="finish" data-id="${esc(p.id)}">Abschliessen</button>
       ${p.paused ? `<button data-action="resume" data-id="${esc(p.id)}">Aufwecken</button>` : `<button data-action="pause" data-id="${esc(p.id)}">Ruhen lassen</button>`}
       <button data-action="rename">Umbenennen</button>
       <button data-action="del" data-id="${esc(p.id)}">Löschen</button>
       <button class="ghost" data-action="menu-close">Schliessen</button></div>
-      <p class="hint">Ruhen lassen heisst: kein Druck, keine Erinnerungen. Das Projekt wartet einfach.</p></section>`;
+      <p class="hint">Ruhen lassen heisst: kein Druck, keine Erinnerungen. Das Projekt wartet einfach. Abschliessen heisst: fertig, es braucht keinen nächsten Schritt mehr.</p></section>`;
   }
 
   // ---------- mutations ----------
@@ -491,6 +539,7 @@ textarea { min-height: 96px; resize: vertical; }
     p.saves.push(save);
     p.remindAt = remindFrom(d.remind);
     p.paused = false;
+    p.finished = null;
     commit();
     view = { name: "home" }; render();
     toast(p.example ? "Gespeichert (Beispiel, wird nicht dauerhaft gesichert)." : "Gespeichert. Hier geht es weiter, wann immer du bereit bist.");
@@ -526,6 +575,24 @@ textarea { min-height: 96px; resize: vertical; }
       case "pause": { const p = find(id); p.paused = true; p.remindAt = null; commit(); view.menu = false; render(); toast("Das Projekt ruht. Es wartet einfach auf dich."); break; }
       case "resume": { const p = find(id); p.paused = false; commit(); view.menu = false; render(); toast("Willkommen zurück."); break; }
       case "rename": view.rename = true; render(); break;
+      case "finish": {
+        const p = find(id); if (!p) break;
+        const form = b.closest("form");
+        if (form && view.afterDone) {
+          const where = form.querySelector("#f-where").value.trim();
+          const c = current(p); if (c) c.done = true;
+          if (where) p.saves.push({ id: uid(), at: now(), where, next: "Abgeschlossen", done: true, final: true });
+        }
+        p.finished = now(); p.paused = false; p.remindAt = null;
+        commit(); view = { name: "project", id }; render(); window.scrollTo(0, 0);
+        toast("Abgeschlossen. Gut gemacht.");
+        break;
+      }
+      case "reopen": {
+        const p = find(id); if (!p) break;
+        view = { name: "save", id, reopen: true, draft: { remind: "none", next: "" } }; render(); window.scrollTo(0, 0);
+        break;
+      }
       case "del": confirmFor = "del:" + id; render(); break;
       case "del-no": confirmFor = null; render(); break;
       case "del-yes": {

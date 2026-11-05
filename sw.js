@@ -1,5 +1,5 @@
 // Speicherpunkt: Offline-Cache. Bei jeder neuen Version VERSION erhöhen.
-const VERSION = "sp-v1";
+const VERSION = "sp-v2";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icons/favicon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
