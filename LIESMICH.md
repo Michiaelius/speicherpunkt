@@ -29,3 +29,15 @@ Wichtig: **HTTPS ist Pflicht**, sonst lassen sich Offline-Modus und Installation
     python -m http.server 8080
 
 Dann http://localhost:8080 öffnen.
+
+## Abgleich zwischen Geräten (Supabase)
+
+Projekt-URL und öffentlicher Schlüssel stehen oben in `index.html` (`SP_CONFIG`).
+Einmalig in Supabase:
+
+1. SQL Editor → Inhalt von `supabase-setup.sql` einfügen → Run.
+2. Authentication → URL Configuration → Site URL: `https://speicherpunkt.zbinden.space`
+3. Für die Testphase: Authentication → Sign In / Providers → Email → „Confirm email“ ausschalten.
+
+Daten: eine Zeile pro Person in `sp_state`, geschützt durch Row Level Security.
+Zusammenführen: projektweise, die jüngere Änderung gewinnt; Löschungen werden mitgeführt.

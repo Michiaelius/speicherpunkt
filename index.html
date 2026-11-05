@@ -194,6 +194,11 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
 .howto { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: start; }
 .howto .num { width: 30px; height: 30px; font-size: .9rem; }
 
+input[type=password] { width: 100%; font: inherit; font-size: 1.02rem; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+button.ghostlink { background: none; border: none; padding: 0; min-height: 0; color: var(--accent, var(--terra)); text-decoration: underline; text-underline-offset: 3px; font-weight: 500; }
+.panel .row button.ghostlink { padding: 8px 4px; }
+.sync-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--taupe); vertical-align: middle; }
+.sync-dot[data-s="ok"] { background: var(--sage); } .sync-dot[data-s="busy"] { background: var(--mustard); } .sync-dot[data-s="offline"], .sync-dot[data-s="error"] { background: var(--coral); }
 .toast { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 36px); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--cta); color: var(--on-cta); padding: 11px 18px; border-radius: 999px; font-size: .9rem; pointer-events: none; text-align: center; }
 @media (prefers-reduced-motion: no-preference) { .app > * { animation: rise .3s ease-out both; } @keyframes rise { from { transform: translateY(6px); } to { transform: none; } } }
 </style>
@@ -205,15 +210,25 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
+  // Abgleich zwischen Geräten (Supabase). Der öffentliche Schlüssel darf in der App stehen.
+  window.SP_CONFIG = window.SP_CONFIG || {
+    url: "https://satqwruqmwgcflcggbul.supabase.co",
+    key: "sb_publishable_U214RD6vhA1GlMfMPG04Xw_Z2g_qF3l"
+  };
+</script>
+<script>
 (() => {
   "use strict";
   const KEY = "speicherpunkt.v1";
+  const SKEY = "speicherpunkt.session";
+  const CFG = window.SP_CONFIG || {};
+  const SYNC_ON = !!(CFG.url && CFG.key);
   const DAY = 86400000;
   const $app = document.getElementById("app");
   const $toast = document.getElementById("toast");
 
   // ---------- state ----------
-  let state = { v: 1, projects: [], updated: 0 };
+  let state = { v: 2, projects: [], deleted: {}, updated: 0 };
   let examples = makeExamples();
   let view = { name: "home" };
   let storage = "memory"; // memory | local
@@ -252,10 +267,147 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
     try { localStorage.setItem(KEY, JSON.stringify(state)); if (storage === "memory") storage = "local"; return true; } catch { return false; }
   }
   function valid(s) { return s && typeof s === "object" && Array.isArray(s.projects); }
+  function normalize(s) { s.v = 2; if (!s.deleted || typeof s.deleted !== "object") s.deleted = {}; return s; }
 
+  // Jede Änderung an einem Projekt bekommt einen Zeitstempel (mod). So lassen sich Geräte projektweise zusammenführen.
+  let fp = {};
+  function fingerprint(p) { const { mod, ...rest } = p; return JSON.stringify(rest); }
+  function resetFingerprints() { fp = {}; for (const p of state.projects) fp[p.id] = fingerprint(p); }
+  function stampMods() {
+    for (const p of state.projects) { const f = fingerprint(p); if (fp[p.id] !== f) { p.mod = now(); fp[p.id] = f; } }
+  }
   function persist() {
+    stampMods();
     state.updated = now();
     writeLocal();
+    scheduleSync();
+  }
+  function tombstone(id) { state.deleted[id] = now(); delete fp[id]; }
+
+  function merge(a, b) {
+    const out = { v: 2, projects: [], deleted: {}, updated: Math.max(a.updated || 0, b.updated || 0) };
+    for (const src of [a.deleted || {}, b.deleted || {}]) for (const [id, t] of Object.entries(src)) out.deleted[id] = Math.max(out.deleted[id] || 0, t);
+    const byId = new Map();
+    for (const p of [...(a.projects || []), ...(b.projects || [])]) {
+      const prev = byId.get(p.id);
+      if (!prev || (p.mod || 0) > (prev.mod || 0)) byId.set(p.id, p);
+    }
+    const order = [...(a.projects || []).map(p => p.id), ...(b.projects || []).map(p => p.id)];
+    const seen = new Set();
+    for (const id of order) {
+      if (seen.has(id)) continue; seen.add(id);
+      const p = byId.get(id);
+      if (out.deleted[id] && out.deleted[id] >= (p.mod || 0)) continue;
+      out.projects.push(JSON.parse(JSON.stringify(p)));
+    }
+    const cutoff = now() - 120 * DAY;
+    for (const [id, t] of Object.entries(out.deleted)) if (t < cutoff) delete out.deleted[id];
+    return out;
+  }
+
+  // ---------- Konto und Abgleich ----------
+  let session = null;
+  let sync = { state: SYNC_ON ? "out" : "off", at: 0, msg: "" }; // off | out | busy | ok | offline | error
+  function readSession() { try { const r = localStorage.getItem(SKEY); return r ? JSON.parse(r) : null; } catch { return null; } }
+  function writeSession() { try { if (session) localStorage.setItem(SKEY, JSON.stringify(session)); else localStorage.removeItem(SKEY); } catch {} }
+  function keepSession(d) {
+    if (!d || !d.access_token) return false;
+    session = { access_token: d.access_token, refresh_token: d.refresh_token, expires_at: now() + (d.expires_in || 3600) * 1000,
+      user: { id: d.user && d.user.id, email: d.user && d.user.email } };
+    writeSession(); return true;
+  }
+  async function call(path, opts = {}) {
+    const headers = { apikey: CFG.key, "Content-Type": "application/json", ...(opts.headers || {}) };
+    if (opts.auth) { await freshToken(); if (!session) { const e = new Error("signed_out"); e.code = "signed_out"; throw e; } headers.Authorization = "Bearer " + session.access_token; }
+    let r;
+    try { r = await fetch(CFG.url.replace(/\/+$/, "") + path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined }); }
+    catch { const e = new Error("offline"); e.code = "offline"; throw e; }
+    let data = null; const txt = await r.text(); try { data = txt ? JSON.parse(txt) : null; } catch {}
+    if (!r.ok) { const e = new Error((data && (data.msg || data.message || data.error_description || data.error)) || ("HTTP " + r.status)); e.status = r.status; e.data = data; e.code = (data && (data.error_code || data.code)) || ""; throw e; }
+    return data;
+  }
+  let refreshing = null;
+  async function freshToken() {
+    if (!session || session.expires_at - 60000 > now()) return;
+    if (!refreshing) refreshing = (async () => {
+      try { const d = await call("/auth/v1/token?grant_type=refresh_token", { method: "POST", body: { refresh_token: session.refresh_token } }); keepSession(d); }
+      catch (e) { if (e.code !== "offline") { session = null; writeSession(); sync = { state: "out", at: 0, msg: "Bitte melde dich neu an." }; } else throw e; }
+      finally { refreshing = null; }
+    })();
+    return refreshing;
+  }
+  function authError(e) {
+    const m = String(e && e.message || "").toLowerCase();
+    if (e && e.code === "offline") return "Keine Verbindung. Prüf dein Internet und versuch es nochmals.";
+    if (m.includes("invalid login") || m.includes("invalid_credentials") || e.code === "invalid_credentials") return "E-Mail oder Passwort stimmt nicht.";
+    if (m.includes("already registered") || m.includes("already exists") || e.code === "user_already_exists") return "Mit dieser E-Mail gibt es schon ein Konto. Melde dich stattdessen an.";
+    if (m.includes("not confirmed") || e.code === "email_not_confirmed") return "Bitte bestätige zuerst deine E-Mail-Adresse über den Link im Postfach.";
+    if (m.includes("password") && (m.includes("6") || m.includes("weak") || m.includes("short"))) return "Das Passwort muss mindestens 6 Zeichen lang sein.";
+    if (m.includes("email") && m.includes("invalid")) return "Diese E-Mail-Adresse sieht nicht gültig aus.";
+    if (e && e.status === 429) return "Zu viele Versuche. Warte ein paar Minuten.";
+    return "Das hat nicht geklappt (" + (e && e.message || "unbekannt") + ").";
+  }
+  async function signIn(email, password, create) {
+    if (create) {
+      const d = await call("/auth/v1/signup", { method: "POST", body: { email, password } });
+      if (!keepSession(d)) return "confirm";
+    } else {
+      keepSession(await call("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password } }));
+    }
+    await syncNow(true);
+    return "ok";
+  }
+  async function signOut() {
+    try { await syncNow(true); } catch {}
+    try { if (session) await call("/auth/v1/logout", { method: "POST", auth: true }); } catch {}
+    session = null; writeSession();
+    state = { v: 2, projects: [], deleted: {}, updated: 0 }; resetFingerprints(); writeLocal();
+    examples = makeExamples();
+    sync = { state: "out", at: 0, msg: "" };
+  }
+  let syncTimer = null, syncing = null, syncAgain = false;
+  function scheduleSync() { if (!session) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 1200); }
+  async function syncNow(force) {
+    if (!SYNC_ON || !session) return;
+    if (syncing) { syncAgain = true; return syncing; }
+    syncing = (async () => {
+      sync.state = "busy"; paintSync();
+      try {
+        const rows = await call("/rest/v1/sp_state?select=data,updated_at", { auth: true });
+        const remote = rows && rows[0] && valid(rows[0].data) ? normalize(rows[0].data) : { v: 2, projects: [], deleted: {}, updated: 0 };
+        const before = JSON.stringify(state.projects);
+        const merged = merge(state, remote);
+        state = merged; resetFingerprints(); writeLocal();
+        if (JSON.stringify(remote.projects) !== JSON.stringify(merged.projects) || JSON.stringify(remote.deleted || {}) !== JSON.stringify(merged.deleted) || !rows.length) {
+          await call("/rest/v1/sp_state?on_conflict=user_id", { method: "POST", auth: true,
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: { user_id: session.user.id, data: merged, updated_at: now() } });
+        }
+        sync = { state: "ok", at: now(), msg: "" };
+        if (before !== JSON.stringify(state.projects)) softRender();
+      } catch (e) {
+        if (e.code === "offline") sync = { state: "offline", at: sync.at, msg: "" };
+        else if (e.code === "signed_out" || e.status === 401) { session = null; writeSession(); sync = { state: "out", at: 0, msg: "Bitte melde dich neu an." }; }
+        else sync = { state: "error", at: sync.at, msg: e.message || "Fehler" };
+      }
+      paintSync();
+    })();
+    try { await syncing; } finally { syncing = null; if (syncAgain) { syncAgain = false; syncNow(); } }
+  }
+  function syncLabel() {
+    if (!SYNC_ON) return "Abgleich wird noch eingerichtet.";
+    switch (sync.state) {
+      case "busy": return "Wird abgeglichen …";
+      case "ok": return "Abgeglichen " + ago(sync.at) + ".";
+      case "offline": return "Offline. Änderungen werden abgeglichen, sobald du wieder Internet hast.";
+      case "error": return "Abgleich fehlgeschlagen: " + sync.msg;
+      default: return sync.msg || "Nicht angemeldet.";
+    }
+  }
+  function paintSync() { const el = document.getElementById("sync-status"); if (el) el.textContent = syncLabel(); const d = document.getElementById("sync-dot"); if (d) d.dataset.s = sync.state; }
+  function softRender() {
+    const safe = (view.name === "home" || (view.name === "project" && !view.edit && !view.menu) || view.name === "finished") && !$app.contains(document.activeElement && document.activeElement.matches && document.activeElement.matches("input,textarea") ? document.activeElement : null);
+    if (safe) { if (view.id && !find(view.id)) view = { name: "home" }; render(); }
   }
 
   // ---------- helpers ----------
@@ -356,6 +508,7 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
         h += `<section class="card hero"><h2 class="eyebrow" style="--dot: var(--rose)">Alles ruht gerade</h2><p class="big-step">Das ist in Ordnung. Wenn du so weit bist, weck ein Projekt <em>auf.</em></p></section>`;
       }
       h += `<button class="add" data-action="new">+ Neues Projekt</button>`;
+      if (SYNC_ON && !session && state.projects.length) h += `<p class="banner" id="login-hint"><span class="tag">Tipp</span><span>Auch auf dem PC oder einem zweiten Handy? <button class="ghostlink" data-action="settings">Melde dich an</button>, dann erscheinen deine Projekte überall.</span></p>`;
       const others = due.concat(active.filter(p => !due.includes(p)));
       if (others.length) h += `<section class="group" aria-labelledby="all-h"><h2 id="all-h" class="label">Weitere Projekte</h2><div class="list">${others.map(projRow).join("")}</div></section>`;
       if (resting.length) h += `<details class="group"${others.length || !s ? " open" : ""}><summary class="label">Ruhen gerade (${resting.length})</summary><div class="list">${resting.map(projRow).join("")}</div></details>`;
@@ -470,11 +623,12 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
     },
 
     settings() {
-      const where = storage === "local" ? "nur auf diesem Gerät, in diesem Browser. Niemand sonst sieht sie, auch kein Server. Zwischen Handy und PC wird noch nichts abgeglichen. Mach ab und zu eine Sicherung." : "nur vorübergehend. Dieser Browser erlaubt kein Speichern (zum Beispiel im privaten Modus), mach deshalb eine Sicherung.";
+      const where = storage === "local" ? "nur auf diesem Gerät, in diesem Browser. Niemand sonst sieht sie. Melde dich oben an, damit sie auch auf deinen anderen Geräten erscheinen." : "nur vorübergehend. Dieser Browser erlaubt kein Speichern (zum Beispiel im privaten Modus), mach deshalb eine Sicherung.";
       return `<header class="top"><span class="eyebrow">Einstellungen</span><button class="pill" data-action="home">${BACK("Übersicht")}</button></header>
       <h2 class="title md">Alles an <em>einem Ort.</em></h2>
       <div class="settings-list">
-      <section class="panel"><h2>Speicherort</h2><p id="storage-info">Deine Daten liegen ${where}</p></section>
+      ${accountPanel()}
+      <section class="panel"><h2>Speicherort</h2><p id="storage-info">${session ? `Deine Daten liegen auf diesem Gerät und in deinem Konto. So erscheinen sie auf allen Geräten, auf denen du angemeldet bist.` : `Deine Daten liegen ${where}`}</p></section>
       <section class="panel"><h2>Als App installieren</h2>
         <div class="howto"><span class="num c4">1</span><p><strong>iPhone:</strong> In Safari auf Teilen tippen, dann „Zum Home-Bildschirm“.</p>
         <span class="num c0">2</span><p><strong>Android:</strong> In Chrome im Menü „App installieren“ oder „Zum Startbildschirm hinzufügen“.</p></div>
@@ -499,6 +653,31 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
       </section></div>`;
     }
   };
+
+  function accountPanel() {
+    if (!SYNC_ON) return `<section class="panel" id="account"><h2>Auf allen Geräten</h2><p>${esc(syncLabel())}</p></section>`;
+    if (session) {
+      return `<section class="panel" id="account"><h2>Konto</h2>
+        <p>Angemeldet als <strong id="acc-email">${esc(session.user.email || "")}</strong></p>
+        <p class="small"><span class="sync-dot" id="sync-dot" data-s="${sync.state}" aria-hidden="true"></span> <span id="sync-status">${esc(syncLabel())}</span></p>
+        ${confirmFor === "logout" ? `<p>Beim Abmelden verschwinden deine Projekte von diesem Gerät. In deinem Konto bleiben sie gespeichert.</p>
+          <div class="row"><button class="primary" data-action="logout-yes">Abmelden</button><button data-action="logout-no">Abbrechen</button></div>`
+        : `<div class="row"><button data-action="sync-now">Jetzt abgleichen</button><button data-action="logout">Abmelden</button></div>`}
+      </section>`;
+    }
+    const mode = view.authMode || "login";
+    return `<form class="panel" id="account" data-form="auth" novalidate><h2>${mode === "signup" ? "Konto erstellen" : "Anmelden"}</h2>
+      <p>Mit einem Konto erscheinen deine Projekte auf allen deinen Geräten. Jede Person hat ihr eigenes Konto und sieht nur ihre eigenen Projekte.</p>
+      <div class="field"><label for="f-email">E-Mail</label><input type="text" id="f-email" name="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" value="${esc(view.authEmail || "")}"></div>
+      <div class="field"><label for="f-pass">Passwort</label><input type="password" id="f-pass" name="password" autocomplete="${mode === "signup" ? "new-password" : "current-password"}" minlength="6">
+        ${mode === "signup" ? `<div class="hint">Mindestens 6 Zeichen.</div>` : ""}</div>
+      <div class="error" id="auth-err" ${view.authErr ? "" : "hidden"}>${esc(view.authErr || "")}</div>
+      ${view.authInfo ? `<p class="hint" id="auth-info">${esc(view.authInfo)}</p>` : ""}
+      <div class="row"><button class="primary" type="submit" ${view.authBusy ? "disabled" : ""}>${mode === "signup" ? "Konto erstellen" : "Anmelden"}</button>
+      <button type="button" class="ghostlink" data-action="auth-toggle">${mode === "signup" ? "Ich habe schon ein Konto" : "Neues Konto erstellen"}</button></div>
+      ${state.projects.length ? `<p class="hint">Deine ${state.projects.length} Projekte auf diesem Gerät werden beim Anmelden in dein Konto übernommen.</p>` : ""}
+    </form>`;
+  }
 
   function projRow(p) {
     const c = current(p), col = colorOf(p);
@@ -634,7 +813,7 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
       case "del-no": confirmFor = null; render(); break;
       case "del-yes": {
         if (find(id) && find(id).example) { examples = examples.filter(p => p.id !== id); }
-        else { state.projects = state.projects.filter(p => p.id !== id); persist(); }
+        else { state.projects = state.projects.filter(p => p.id !== id); tombstone(id); persist(); }
         confirmFor = null; view = { name: "home" }; render(); toast("Projekt gelöscht."); break;
       }
       case "remind": {
@@ -651,9 +830,14 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
         break;
       }
       case "wipe": confirmFor = "wipe"; render(); break;
+      case "auth-toggle": { const f = $app.querySelector("#f-email"); view.authEmail = f ? f.value.trim() : ""; view.authMode = (view.authMode === "signup") ? "login" : "signup"; view.authErr = ""; view.authInfo = ""; render(); break; }
+      case "sync-now": syncNow(true); break;
+      case "logout": confirmFor = "logout"; render(); break;
+      case "logout-no": confirmFor = null; render(); break;
+      case "logout-yes": { b.disabled = true; signOut().then(() => { confirmFor = null; view = { name: "settings" }; render(); toast("Abgemeldet."); }); break; }
       case "imp-no": { view = { name: "settings" }; render(); break; }
       case "wipe-no": confirmFor = null; render(); break;
-      case "wipe-yes": state = { v: 1, projects: [], updated: 0 }; examples = makeExamples(); persist(); confirmFor = null; view = { name: "home" }; render(); toast("Alles gelöscht."); break;
+      case "wipe-yes": { const ids = state.projects.map(p => p.id); state.projects = []; ids.forEach(tombstone); examples = makeExamples(); persist(); } confirmFor = null; view = { name: "home" }; render(); toast("Alles gelöscht."); break;
     }
   });
 
@@ -661,6 +845,20 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
     e.preventDefault();
     const form = e.target, kind = form.dataset.form;
     if (kind === "save") handleSave(form);
+    else if (kind === "auth") {
+      const email = form.querySelector("#f-email").value.trim(), password = form.querySelector("#f-pass").value;
+      const mode = view.authMode || "login";
+      view.authEmail = email; view.authInfo = "";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { view.authErr = "Gib deine E-Mail-Adresse ein."; render(); return; }
+      if (password.length < 6) { view.authErr = "Das Passwort muss mindestens 6 Zeichen lang sein."; render(); return; }
+      view.authErr = ""; view.authBusy = true; render();
+      signIn(email, password, mode === "signup").then(res => {
+        view.authBusy = false;
+        if (res === "confirm") { view.authMode = "login"; view.authInfo = "Fast geschafft: Wir haben dir eine E-Mail geschickt. Bestätige deine Adresse und melde dich dann hier an."; render(); return; }
+        view = { name: "home" }; render(); window.scrollTo(0, 0);
+        toast(state.projects.length ? "Angemeldet. Deine Projekte sind abgeglichen." : "Angemeldet.");
+      }).catch(err => { view.authBusy = false; view.authErr = authError(err); render(); });
+    }
     else if (kind === "edit-step") {
       const p = find(view.id), v = form.querySelector("#f-step").value.trim();
       if (!v) return;
@@ -674,7 +872,10 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
       let s = null; try { s = JSON.parse(raw); } catch {}
       if (!valid(s)) { view = { name: "settings", err: "Das sieht nicht nach einer Sicherung aus. Füge den ganzen kopierten Text ein." }; render(); return; }
       if (state.projects.length && !view.importConfirm) { view = { name: "settings", importConfirm: true, pending: raw }; render(); $app.querySelector("#f-import").value = raw; return; }
-      state = { v: 1, projects: s.projects, updated: 0 }; persist(); view = { name: "home" }; render(); toast("Sicherung eingefügt.");
+      const incoming = new Set(s.projects.map(p => p.id));
+      state.projects.forEach(p => { if (!incoming.has(p.id)) tombstone(p.id); });
+      state.projects = s.projects; for (const id of incoming) delete state.deleted[id];
+      fp = {}; persist(); view = { name: "home" }; render(); toast("Sicherung eingefügt.");
     }
   });
 
@@ -689,15 +890,22 @@ button.finish-btn { align-self: flex-start; background: var(--mustard); border-c
 
   // ---------- boot ----------
   const local = readLocal();
-  if (local) { state = local; storage = "local"; }
+  if (local) { state = normalize(local); storage = "local"; }
+  else { try { localStorage.setItem("speicherpunkt.test", "1"); localStorage.removeItem("speicherpunkt.test"); storage = "local"; } catch { storage = "memory"; } }
+  resetFingerprints();
+  if (SYNC_ON) session = readSession();
   render();
+  if (session) syncNow();
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncNow(); });
+  window.addEventListener("online", () => syncNow());
+  setInterval(() => { if (document.visibilityState === "visible") syncNow(); }, 60000);
   // installierbare App: Offline-Cache und dauerhafter Speicher
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
   }
   if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(() => {}); }
   // Mehrere Tabs: Änderungen aus einem anderen Tab übernehmen
-  window.addEventListener("storage", e => { if (e.key === KEY) { const s = readLocal(); if (s) { state = s; render(); } } });
+  window.addEventListener("storage", e => { if (e.key === KEY) { const s = readLocal(); if (s) { state = normalize(s); resetFingerprints(); softRender(); } } });
 })();
 </script>
 </body>
