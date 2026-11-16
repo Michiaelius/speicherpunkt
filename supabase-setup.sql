@@ -21,3 +21,64 @@ create policy "sp_state löschen" on public.sp_state for delete to authenticated
 
 grant select, insert, update, delete on public.sp_state to authenticated;
 revoke all on public.sp_state from anon;
+
+-- Vorschläge für Mini-Schritte: Tageskontingent pro Person (schützt vor Kosten durch Missbrauch).
+create table if not exists public.sp_usage (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  day     date not null,
+  n       int  not null default 0,
+  primary key (user_id, day)
+);
+alter table public.sp_usage enable row level security;   -- keine Policies: nur die Funktion unten schreibt hier
+
+create or replace function public.sp_take_quota()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare c int;
+begin
+  if auth.uid() is null then return false; end if;
+  insert into public.sp_usage (user_id, day, n) values (auth.uid(), current_date, 1)
+  on conflict (user_id, day) do update set n = public.sp_usage.n + 1
+  returning n into c;
+  return c <= 40;   -- höchstens 40 Vorschläge pro Person und Tag
+end $$;
+
+revoke all on function public.sp_take_quota() from public, anon;
+grant execute on function public.sp_take_quota() to authenticated;
+
+-- Konto löschen: Jede Person kann ihr eigenes Konto löschen. Projekte (sp_state) und Kontingent (sp_usage)
+-- werden dabei automatisch mitgelöscht (on delete cascade).
+create or replace function public.sp_delete_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'nicht angemeldet'; end if;
+  delete from auth.users where id = auth.uid();
+end $$;
+
+revoke all on function public.sp_delete_account() from public, anon;
+grant execute on function public.sp_delete_account() to authenticated;
+
+-- Warteliste der Landingpage. Jeder darf sich eintragen, aber niemand kann die Liste über die App lesen.
+-- Anschauen: im Supabase Table Editor (Tabelle sp_waitlist).
+create table if not exists public.sp_waitlist (
+  id         uuid primary key default gen_random_uuid(),
+  email      text not null check (char_length(email) between 6 and 254 and email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+  note       text check (note is null or char_length(note) <= 1000),
+  source     text check (source is null or char_length(source) <= 50),
+  created_at timestamptz not null default now()
+);
+create unique index if not exists sp_waitlist_email_idx on public.sp_waitlist (lower(email));
+alter table public.sp_waitlist enable row level security;
+
+drop policy if exists "sp_waitlist eintragen" on public.sp_waitlist;
+create policy "sp_waitlist eintragen" on public.sp_waitlist for insert to anon, authenticated with check (true);
+
+revoke all on public.sp_waitlist from anon, authenticated;
+grant insert on public.sp_waitlist to anon, authenticated;

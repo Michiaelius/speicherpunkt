@@ -1,0 +1,64 @@
+/* Gemeinsames Aussehen für Landingpage, Datenschutz und Impressum (gleiche Farben und Schriften wie die App). */
+@font-face { font-family: "Lora"; src: url("fonts/lora.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lora"; src: url("fonts/lora-italic.woff2") format("woff2"); font-weight: 400 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/inter-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/inter-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/inter-600.woff2") format("woff2"); font-weight: 600 700; font-style: normal; font-display: swap; }
+
+:root {
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); color-scheme: light;
+  --paper: #f7f2ea; --card: #fffdf9; --sunk: #f1ebe1; --line: #e9e0d2; --ink: #2b2830; --muted: #716b74; --faint: #a59d97;
+  --terra: #c46d49; --mustard: #e4b860; --coral: #e3916f; --lavender: #a497d6; --sage: #93b29f; --teal: #6fa39b; --sky: #8bb1d1; --rose: #e3a0b1;
+  --sage-ink: #4f7a66; --lav-ink: #6a5aa8; --mustard-ink: #9a7320; --rose-ink: #b0607a; --sky-ink: #48759b;
+  --cta: #2b2830; --on-cta: #fdfaf5; --todo: #ffe08a; --blob-a: .9;
+  --font-serif: "Lora", "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  --r: 16px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #1c1a20; --card: #25222a; --sunk: #2c2932; --line: #39343f; --ink: #f0eae2; --muted: #aaa2a9; --faint: #7f7880;
+  --terra: #e79a77; --mustard: #e9c374; --coral: #e79d7e; --lavender: #b3a7e2; --sage: #9fbfab; --teal: #84b5ad; --sky: #9bbfdc; --rose: #e9aebd;
+  --sage-ink: #a7c9b5; --lav-ink: #c2b7ee; --mustard-ink: #ecc77a; --rose-ink: #efb4c3; --sky-ink: #a9c9e6;
+  --cta: #f0eae2; --on-cta: #1c1a20; --todo: #6b5410; --blob-a: .42; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #1c1a20; --card: #25222a; --sunk: #2c2932; --line: #39343f; --ink: #f0eae2; --muted: #aaa2a9; --faint: #7f7880;
+  --terra: #e79a77; --mustard: #e9c374; --coral: #e79d7e; --lavender: #b3a7e2; --sage: #9fbfab; --teal: #84b5ad; --sky: #9bbfdc; --rose: #e9aebd;
+  --sage-ink: #a7c9b5; --lav-ink: #c2b7ee; --mustard-ink: #ecc77a; --rose-ink: #efb4c3; --sky-ink: #a9c9e6;
+  --cta: #f0eae2; --on-cta: #1c1a20; --todo: #6b5410; --blob-a: .42; color-scheme: dark }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-sans); font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; position: relative; }
+p { margin: 0; }
+h1, h2, h3 { margin: 0; font-family: var(--font-serif); font-weight: 400; letter-spacing: -.01em; text-wrap: balance; }
+em { font-style: italic; color: var(--accent, var(--terra)); }
+a { color: inherit; text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--mustard); outline-offset: 2px; }
+.t-sky { --accent: var(--sky-ink); --dot: var(--sky); }
+.t-sage { --accent: var(--sage-ink); --dot: var(--sage); }
+.t-terra { --accent: var(--terra); --dot: var(--coral); }
+mark.todo { background: var(--todo); color: var(--ink); padding: 0 4px; border-radius: 4px; font-weight: 600; }
+
+.wrap { position: relative; z-index: 1; max-width: 720px; margin: 0 auto; padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px)); padding-block: 22px 56px; }
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; }
+.eyebrow { display: inline-flex; align-items: center; gap: 9px; font-weight: 600; font-size: .7rem; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); text-decoration: none; }
+.eyebrow::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--dot, var(--coral)); flex: none; }
+.label { font-weight: 600; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--muted); font-size: .68rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; text-decoration: none; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 22px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-size: .98rem; font-weight: 500; text-decoration: none; cursor: pointer; }
+.btn.primary { background: var(--cta); color: var(--on-cta); border-color: var(--cta); font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+/* Rechtstexte */
+.doc { display: flex; flex-direction: column; gap: 26px; padding-top: 26px; }
+.doc h1 { font-size: clamp(2.1rem, 9vw, 2.9rem); line-height: 1.08; }
+.doc .lead { color: var(--muted); }
+.doc .head { display: flex; flex-direction: column; gap: 14px; }
+.doc section { display: flex; flex-direction: column; gap: 10px; }
+.doc h2 { font-size: 1.35rem; }
+.doc ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.doc .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+.doc p, .doc li { max-width: 68ch; overflow-wrap: break-word; }
+footer.foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 20px; padding-top: 34px; font-size: .88rem; color: var(--muted); }
+footer.foot a { color: var(--muted); }
