@@ -18,6 +18,7 @@ Statische Seite (GitHub Pages) plus Supabase für Konten, Abgleich und KI-Vorsch
 | `fonts/` | Lora und Inter, mitgeliefert (keine Anfragen an Google) |
 | `supabase-setup.sql` | Tabellen und Regeln in Supabase |
 | `supabase/functions/suggest-step/index.ts` | Edge Function für KI-Vorschläge |
+| `supabase/functions/push/index.ts` | Edge Function, die fällige Erinnerungen als Mitteilung verschickt |
 | `entwicklung/tests/` | automatische Tests (werden nicht von der App geladen) |
 | `AENDERUNGEN.md` | was sich in welcher Version geändert hat |
 
@@ -26,7 +27,7 @@ Statische Seite (GitHub Pages) plus Supabase für Konten, Abgleich und KI-Vorsch
 1. Alle Dateien im GitHub-Repository ersetzen: Add file → Upload files, dann den **Inhalt** dieses Ordners
    (alle Dateien **und Ordner**) per Drag-and-drop ins Fenster ziehen. Nicht über „choose your files“,
    sonst landen alle Dateien ohne Ordner im Hauptordner und die Willkommensseite überschreibt die App.
-2. In `sw.js` steht `const VERSION = "sp-v9";`. Bei jeder neuen Version hochzählen,
+2. In `sw.js` steht `const VERSION = "sp-v10";`. Bei jeder neuen Version hochzählen,
    damit installierte Apps die neuen Dateien laden.
 3. Die Version steht auch in `index.html` (`APP_VERSION`) und unten in den Einstellungen der App.
    So siehst du auf dem Handy, ob die neue Version angekommen ist.
@@ -36,9 +37,32 @@ Statische Seite (GitHub Pages) plus Supabase für Konten, Abgleich und KI-Vorsch
 1. **SQL Editor:** Inhalt von `supabase-setup.sql` einfügen und ausführen. Darf mehrmals ausgeführt werden.
 2. **Authentication → URL Configuration:** Site URL `https://speicherpunkt.zbinden.space`
 3. **Authentication → Sign In / Providers → Email:** „Confirm email“ aus (Testphase).
-4. **E-Mails für „Passwort vergessen“:** Supabase verschickt ohne eigenen Mailserver nur E-Mails an Mitglieder
-   des eigenen Supabase-Teams, höchstens etwa 2 pro Stunde. Für alle anderen unter
-   Authentication → Emails → SMTP einen eigenen Absender eintragen (z. B. ein Postfach bei Infomaniak oder Resend).
+4. **E-Mails für „Passwort vergessen“:** siehe nächster Abschnitt.
+
+## Eigener E-Mail-Absender (SMTP)
+
+Ohne eigenen Absender verschickt Supabase nur E-Mails an Mitglieder des eigenen Supabase-Teams, höchstens etwa 2 pro Stunde.
+Fremde Nutzer bekommen dann keinen Link zum Zurücksetzen des Passworts.
+
+1. Bei Infomaniak ein Postfach auf der eigenen Domain anlegen, zum Beispiel `speicherpunkt@zbinden.space`
+   (braucht einen E-Mail-Dienst bei Infomaniak), und dafür ein Passwort erstellen.
+2. Supabase → Authentication → Emails → Tab **SMTP Settings** → **Enable Custom SMTP** einschalten.
+3. Eintragen:
+
+   | Feld | Wert |
+   | --- | --- |
+   | Sender email address | die Adresse des Postfachs, z. B. `speicherpunkt@zbinden.space` |
+   | Sender name | `Speicherpunkt` |
+   | Host | `mail.infomaniak.com` |
+   | Port number | `587` (falls das nicht geht: `465`) |
+   | Username | die vollständige Adresse des Postfachs |
+   | Password | das Passwort des Postfachs |
+
+4. **Save changes**. Danach in der App abmelden und „Passwort vergessen?“ mit der eigenen Adresse ausprobieren.
+5. Erst wenn das klappt: Authentication → Sign In / Providers → Email → „Confirm email“ einschalten.
+   Dann muss jede neue Person ihre Adresse bestätigen, und niemand kann sich mit einer fremden Adresse anmelden.
+
+Die deutschen Texte der E-Mails lassen sich unter Authentication → Emails → Templates anpassen.
 
 Projekt-URL und öffentlicher Schlüssel stehen in `index.html` bei `SP_CONFIG` und in `willkommen/warteliste.js`.
 Die Supabase-Adresse steht zusätzlich in der `Content-Security-Policy` oben in `index.html` und `willkommen/index.html`.
@@ -51,6 +75,32 @@ Die Quelle kommt aus dem Link: `…/willkommen/?q=instagram` speichert „instag
 
 Daten: eine Zeile pro Person in `sp_state`, geschützt durch Row Level Security.
 Abgleich: projektweise, die jüngere Änderung gewinnt; Löschungen werden mitgeführt.
+
+## Erinnerungen als Mitteilung (Push)
+
+1. `supabase-setup.sql` im SQL Editor ausführen. Ganz unten im Ergebnis muss stehen:
+   **„Zeitplan aktiv: Erinnerungen werden alle 5 Minuten geprüft.“**
+   Steht dort „NICHT aktiv“, unter Database → Extensions `pg_cron` und `pg_net` einschalten und nochmals ausführen.
+2. Edge Functions → Deploy a new function → Via Editor → Name **`push`**,
+   Inhalt von `supabase/functions/push/index.ts` → Deploy.
+3. In den Einstellungen der Funktion **„Verify JWT“ ausschalten**. Secrets braucht sie keine:
+   Das Schlüsselpaar für die Mitteilungsdienste erzeugt sie beim ersten Lauf selbst und legt es in der Datenbank ab.
+4. Fünf Minuten warten (erster Lauf). Dann in der App: Einstellungen → Erinnerungen → **Erinnerungen einschalten**
+   → **Probe-Mitteilung zeigen**. Die Probe geht den ganzen Weg über den Server und erscheint nach wenigen Sekunden.
+
+So läuft es: Alle 5 Minuten ruft die Datenbank (`sp_push_tick`) die Funktion `push` mit einem Einmal-Code auf.
+Nur mit diesem Code bekommt die Funktion die fälligen Erinnerungen. Sie verschlüsselt jede Mitteilung für genau ein Gerät.
+Fällig heisst: Die gewählte Erinnerung (jeweils 8 Uhr morgens) ist erreicht, das Projekt ruht nicht und ist nicht abgeschlossen.
+
+iPhone und iPad: Mitteilungen gehen nur, wenn die App auf dem Home-Bildschirm installiert ist. Die App weist darauf hin.
+
+Kontrolle: Edge Functions → push → Logs, oder im SQL Editor `select * from cron.job_run_details order by start_time desc limit 5;`
+
+## Kommen die Leute wieder?
+
+Supabase → Table Editor → **sp_wiederkehr**. Eine Zeile pro Woche, in der Geräte zum ersten Mal kamen:
+wie viele Geräte, und wie viele davon in Woche 1, in Woche 2 oder später wieder da waren.
+Gezählt wird anonym (zufällige Gerätenummer und Datum, höchstens einmal pro Tag); in den Einstellungen der App abschaltbar.
 
 ## KI-Vorschläge für Mini-Schritte (optional)
 

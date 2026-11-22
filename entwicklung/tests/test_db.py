@@ -71,6 +71,95 @@ try:
     st, j = rest("POST", "/rpc/sp_api_open", {"p_token": "sp_" + "0" * 64}); check(st == 404, f"B sp_api_open nicht mehr erreichbar: {st}")
     L.psql_file(Lm.APP / "supabase-setup.sql"); check(True, "zweimal ausführen geht")
 
+    # ================= D: Erinnerungen (Push) und anonyme Zählung =================
+    import time as _t
+    x = L.signup("push@example.ch", "geheim789"); X = x["access_token"]; XID = x["user"]["id"]
+    for tbl in ("sp_push_subs", "sp_push_sent", "sp_push_keys", "sp_push_nonce", "sp_visits", "sp_wiederkehr"):
+        for who, tok in (("anon", None), ("angemeldet", X)):
+            st, j = rest("GET", f"/{tbl}?select=*", jwt=tok); check(st in (401, 403), f"D {who} darf {tbl} nicht lesen ({st})")
+    for fn in ("sp_push_tick", "sp_push_nonce_ok", "sp_push_zeitplan"):
+        st, j = rest("POST", f"/rpc/{fn}", {"p_nonce": "11111111-2222-4333-8444-555555555555"} if fn.endswith("_ok") else {}, jwt=X); check(st in (401, 403, 404), f"D {fn} von aussen aufrufbar ({st})")
+    st, j = rest("POST", "/rpc/sp_push_public_key", {}); check(st in (401, 403), f"D anon bekommt keinen Schlüssel ({st})")
+    st, j = rest("POST", "/rpc/sp_push_public_key", {}, jwt=X); check(st == 200 and j is None, f"D vor dem ersten Lauf kein Schlüssel: {st} {j}")
+    EP = "https://fcm.googleapis.com/fcm/send/geraet-1"; KEYS = {"p_p256dh": "B" + "A" * 86, "p_auth": "A" * 22}
+    st, j = rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, **KEYS}); check(st in (401, 403), f"D anon kann kein Gerät anmelden ({st})")
+    st, j = rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": "http://unsicher.example/x", **KEYS}, jwt=X); check(st == 400, f"D Adresse ohne https abgelehnt ({st})")
+    st, j = rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, "p_p256dh": "kurz", "p_auth": "A" * 22}, jwt=X); check(st == 400, f"D kaputter Schlüssel abgelehnt ({st})")
+    st, j = rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, **KEYS}, jwt=X); check(st in (200, 204), f"D Gerät anmelden ({st} {j})")
+    st, j = rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, **KEYS}, jwt=X); check(L.psql("select count(*) from sp_push_subs") == "1", "D doppeltes Anmelden gibt keine zweite Zeile")
+    nonce = lambda: L.psql("insert into sp_push_nonce default values returning nonce")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": "11111111-2222-4333-8444-555555555555"}); check(j == {"status": 401}, f"D falscher Einmal-Code: {j}")
+    old_n = L.psql("insert into sp_push_nonce (created_at) values (now() - interval '6 minutes') returning nonce")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": old_n}); check(j == {"status": 401}, f"D abgelaufener Einmal-Code: {j}")
+    n1 = nonce()
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); check(j == {"status": 200, "keys": None, "due": []}, f"D ohne Schlüssel nichts fällig: {j}")
+    st, j = rest("POST", "/rpc/sp_push_setkeys", {"p_nonce": "11111111-2222-4333-8444-555555555555", "p_pub": "B" * 87, "p_priv": "{}"}); check(j == {"status": 401}, f"D Schlüssel setzen ohne Code: {j}")
+    st, j = rest("POST", "/rpc/sp_push_setkeys", {"p_nonce": n1, "p_pub": "B" * 87, "p_priv": '{"d":"geheim"}'}); check(j["status"] == 200 and j["keys"]["pub"] == "B" * 87, f"D Schlüssel setzen: {j}")
+    st, j = rest("POST", "/rpc/sp_push_setkeys", {"p_nonce": n1, "p_pub": "C" * 87, "p_priv": "{}"}); check(j["keys"]["pub"] == "B" * 87, f"D Schlüssel werden nicht überschrieben: {j}")
+    st, j = rest("POST", "/rpc/sp_push_public_key", {}, jwt=X); check(j == "B" * 87, f"D App bekommt den öffentlichen Schlüssel: {j}")
+    check("geheim" not in json.dumps(j), "D privater Schlüssel sichtbar")
+    now = int(_t.time() * 1000); H = 3600000
+    proj = lambda pid, name, rat, **kw: {"id": pid, "name": name, "created": now, "paused": False, "finished": None, "remindAt": rat, "mod": now, "saves": [{"id": "s0", "at": now, "where": "", "next": "alt"}, {"id": "s1", "at": now, "where": "", "next": "Schritt von " + name}], **kw}
+    data = {"v": 2, "deleted": {}, "projects": [
+        proj("faellig", "Steuern", now - H), proj("zukunft", "Später", now + H), proj("alt", "Vorgestern", now - 50 * H),
+        proj("ruht", "Ruht", now - H, paused=True), proj("fertig", "Fertig", now - H, finished=now), proj("ohne", "Ohne", None),
+        {"id": "kaputt", "remindAt": "morgen"}, "unsinn", {"id": 5, "remindAt": now - H}]}
+    rest("POST", "/sp_state", {"user_id": XID, "data": data, "updated_at": 1}, jwt=X, prefer="return=minimal")
+    rest("PATCH", f"/sp_state?user_id=eq.{WID}", {"data": {"v": 2, "projects": [proj("fremd", "Von der Partnerin", now - H)]}}, jwt=W)
+    rest("POST", "/sp_state", {"user_id": WID, "data": {"v": 2, "projects": [proj("fremd", "Von der Partnerin", now - H)]}, "updated_at": 1}, jwt=W, prefer="return=minimal")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); due = j.get("due", [])
+    check(len(due) == 1 and due[0]["project"] == "faellig" and due[0]["name"] == "Steuern" and due[0]["next"] == "Schritt von Steuern" and due[0]["endpoint"] == EP and due[0]["remind"] == now - H, f"D genau die eine fällige Erinnerung: {due}")
+    check(j["keys"]["priv"] == '{"d":"geheim"}', "D Funktion bekommt den privaten Schlüssel")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); check(j["due"] == [], f"D zweiter Lauf schickt nichts doppelt: {j['due']}")
+    st, j = rest("POST", "/rpc/sp_push_report", {"p_nonce": "11111111-2222-4333-8444-555555555555", "p_gone": [due[0]["sub"]], "p_failed": []}); check(j == {"status": 401} and L.psql("select count(*) from sp_push_subs") == "1", "D Melden ohne Code ändert nichts")
+    st, j = rest("POST", "/rpc/sp_push_report", {"p_nonce": n1, "p_gone": [], "p_failed": [{"sub": due[0]["sub"], "project": "faellig", "remind": now - H}]})
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); check(len(j["due"]) == 1, f"D Fehlgeschlagenes kommt beim nächsten Lauf nochmals: {j['due']}")
+    rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP + "-zwei", **KEYS}, jwt=X)
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); check(len(j["due"]) == 1 and j["due"][0]["endpoint"] == EP + "-zwei", f"D zweites Gerät bekommt die Erinnerung auch, das erste nicht nochmals: {j['due']}")
+    st, j = rest("POST", "/rpc/sp_push_unsubscribe", {"p_endpoint": EP}, jwt=W); check(L.psql("select count(*) from sp_push_subs") == "2", "D fremdes Gerät lässt sich nicht abmelden")
+    st, j = rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, **KEYS}, jwt=W)
+    check(L.psql(f"select user_id from sp_push_subs where endpoint = '{EP}'") == WID and L.psql("select count(*) from sp_push_subs") == "2", "D Gerät wechselt zum neu angemeldeten Konto")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); check(len(j["due"]) == 1 and j["due"][0]["name"] == "Von der Partnerin", f"D nach dem Wechsel nur noch Erinnerungen des neuen Kontos: {j['due']}")
+    gid = L.psql(f"select id from sp_push_subs where endpoint = '{EP}-zwei'")
+    rest("POST", "/rpc/sp_push_report", {"p_nonce": n1, "p_gone": [gid], "p_failed": []}); check(L.psql("select count(*) from sp_push_subs") == "1" and L.psql(f"select count(*) from sp_push_sent where sub_id = '{gid}'") == "0", "D abgemeldetes Gerät wird entfernt")
+    rest("POST", "/rpc/sp_push_unsubscribe", {"p_endpoint": EP}, jwt=W); check(L.psql("select count(*) from sp_push_subs") == "0", "D eigenes Gerät abmelden")
+    # Probe ohne pg_net: wird vorgemerkt und kommt mit dem nächsten Lauf
+    rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, **KEYS}, jwt=X)
+    st, j = rest("POST", "/rpc/sp_push_test", {"p_endpoint": EP}, jwt=W); check(j is False, f"D Probe für fremdes Gerät: {st} {j}")
+    st, j = rest("POST", "/rpc/sp_push_test", {"p_endpoint": EP}); check(st in (401, 403), f"D Probe ohne Anmeldung ({st})")
+    st, j = rest("POST", "/rpc/sp_push_test", {"p_endpoint": EP}, jwt=X); check(st == 200 and j is True, f"D Probe anfordern: {st} {j}")
+    st, j = rest("POST", "/rpc/sp_push_test", {"p_endpoint": EP}, jwt=X); check(j is False, f"D zweite Probe innert 30 Sekunden abgelehnt: {j}")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); pr = [d for d in j["due"] if d["project"] == ""]
+    check(len(pr) == 1 and pr[0]["endpoint"] == EP and "Probe" in pr[0]["text"] and pr[0]["name"] == "Speicherpunkt", f"D Probe wird ausgeliefert: {j['due']}")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": n1}); check(not [d for d in j["due"] if d["project"] == ""], "D Probe kommt nur einmal")
+    rest("POST", "/rpc/sp_push_unsubscribe", {"p_endpoint": EP}, jwt=X)
+    # Zeitplan (pg_net wird hier durch eine Attrappe ersetzt)
+    L.psql("create schema if not exists net; create table if not exists net.calls (url text, body jsonb, headers jsonb); create or replace function net.http_post(url text, body jsonb, headers jsonb) returns bigint language sql as $$ insert into net.calls values (url, body, headers); select 1::bigint $$;")
+    L.psql("select sp_push_tick()"); check(L.psql("select count(*) from net.calls") == "0", "D ohne Geräte kein Aufruf")
+    rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, **KEYS}, jwt=X); L.psql("select sp_push_tick()")
+    call = json.loads(L.psql("select row_to_json(c)::text from net.calls c"))
+    check(call["url"] == "https://satqwruqmwgcflcggbul.supabase.co/functions/v1/push" and "apikey" not in json.dumps(call["headers"]).lower(), f"D Aufruf der Funktion: {call}")
+    st, j = rest("POST", "/rpc/sp_push_claim", {"p_nonce": call["body"]["nonce"]}); check(j["status"] == 200 and len(j["due"]) == 1, f"D Einmal-Code aus dem Zeitplan gilt: {j}")
+    L.psql("truncate net.calls; update sp_push_subs set test_at = null"); st, j = rest("POST", "/rpc/sp_push_test", {"p_endpoint": EP}, jwt=X)
+    check(j is True and L.psql("select count(*) from net.calls") == "1", f"D Probe löst den Versand sofort aus: {j}")
+    check(L.psql("select count(*) from sp_push_nonce where created_at < now() - interval '1 hour'") == "0", "D alte Codes aufgeräumt")
+    L.psql("truncate sp_push_keys; truncate net.calls; delete from sp_push_subs"); L.psql("select sp_push_tick()"); check(L.psql("select count(*) from net.calls") == "1", "D ohne Schlüssel läuft der Zeitplan trotzdem (legt sie an)")
+    check("NICHT aktiv" in L.psql("select sp_push_zeitplan()"), "D Zeitplan meldet fehlende Erweiterung verständlich")
+    rest("POST", "/rpc/sp_push_subscribe", {"p_endpoint": EP, **KEYS}, jwt=X)
+    rest("POST", "/rpc/sp_delete_account", {}, jwt=X); check(L.psql("select count(*) from sp_push_subs") == "0", "D Konto löschen entfernt die Geräte")
+    # Zählung
+    DEV = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    st, j = rest("POST", "/rpc/sp_seen", {"p_device": DEV}); check(st in (200, 204), f"D Zählung ohne Anmeldung ({st} {j})")
+    rest("POST", "/rpc/sp_seen", {"p_device": DEV}); check(L.psql("select count(*) from sp_visits") == "1", "D ein Eintrag pro Gerät und Tag")
+    st, j = rest("POST", "/rpc/sp_seen", {"p_device": "kein-uuid"}); check(st == 400, f"D kaputte Gerätenummer abgelehnt ({st})")
+    L.psql("""truncate sp_visits; insert into sp_visits values
+      ('00000000-0000-4000-8000-000000000001','2026-11-02'), ('00000000-0000-4000-8000-000000000001','2026-11-05'), ('00000000-0000-4000-8000-000000000001','2026-11-12'),
+      ('00000000-0000-4000-8000-000000000002','2026-11-03'), ('00000000-0000-4000-8000-000000000002','2026-11-30'),
+      ('00000000-0000-4000-8000-000000000003','2026-11-04'),
+      ('00000000-0000-4000-8000-000000000004','2026-11-10'), ('00000000-0000-4000-8000-000000000004','2026-11-11')""")
+    rows = L.psql("select startwoche || ':' || geraete || ':' || zurueck_in_woche_1 || ':' || zurueck_in_woche_2 || ':' || zurueck_spaeter from sp_wiederkehr order by startwoche").split("\n")
+    check(rows == ["2026-11-02:3:1:1:1", "2026-11-09:1:1:0:0"], f"D Auswertung Wiederkehr: {rows}")
+
     # ================= C: Abgleich in der App =================
     class Q(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *a): pass

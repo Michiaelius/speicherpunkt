@@ -1,5 +1,18 @@
 # Änderungen
 
+## Version 10 (22. November 2026)
+
+Neu
+- **Erinnerungen als Mitteilung:** Wer in den Einstellungen „Erinnerungen einschalten“ wählt, bekommt am Morgen der gewählten
+  Erinnerung eine Mitteilung mit dem nächsten Mini-Schritt, auch wenn die App geschlossen ist. Ein Tipp darauf öffnet das Projekt.
+  Mit Probe-Mitteilung, die den ganzen Weg über den Server prüft. Auf dem iPhone nur, wenn die App installiert ist.
+- **Anonyme Zählung:** Die App merkt sich mit einer zufälligen Gerätenummer, an welchen Tagen sie geöffnet wird.
+  Die Auswertung `sp_wiederkehr` zeigt, wie viele nach einer und nach zwei Wochen wiederkommen. In den Einstellungen abschaltbar.
+- Anleitung für den eigenen E-Mail-Absender (SMTP) in `LIESMICH.md`.
+
+Einrichten: `supabase-setup.sql` nochmals ausführen und die Edge Function `push` anlegen (siehe `LIESMICH.md`).
+Ohne das läuft die App wie bisher weiter; unter „Erinnerungen“ steht dann, dass der Server noch nicht bereit ist.
+
 ## Version 9 (22. November 2026)
 
 - **Schnittstelle für andere Programme wieder entfernt.** Die Anbindung an ZbiWeb passt nicht zu dessen Konzept.

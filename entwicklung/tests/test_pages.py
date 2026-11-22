@@ -125,7 +125,7 @@ with sync_playwright() as p:
     pg.fill("#f-email", "ohne@example.ch"); pg.fill("#f-pass", "secret1"); pg.click("#account button[type=submit]"); pg.wait_for_timeout(700)
     pg.click("button:has-text('Einstellungen')")
     check(pg.locator("#api").count() == 0 and "Schnittstelle" not in pg.text_content("main") and "Token" not in pg.text_content("main"), "Schnittstelle noch in den Einstellungen")
-    check("Version 9" in pg.text_content("#version"), "Versionsnummer: " + pg.text_content("#version"))
+    check("Version 10" in pg.text_content("#version"), "Versionsnummer: " + pg.text_content("#version"))
     problems.extend(pg._errs); ctx.close()
     b.close()
 print(json.dumps(problems, ensure_ascii=False, indent=1) if problems else "ALL OK")

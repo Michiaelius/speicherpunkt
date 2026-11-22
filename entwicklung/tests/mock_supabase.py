@@ -21,6 +21,11 @@ class Store:
         self.recover = []
         self.waitlist = []
         self.waitlist_status = 0
+        self.push_key = "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM"  # Beispiel aus RFC 8292, None = noch nicht eingerichtet
+        self.push_missing = False
+        self.push_subs = {}   # endpoint -> {uid, p256dh, auth}
+        self.push_tests = []
+        self.visits = []      # (device, tag)
         self.lock = threading.Lock()
 
 S = Store()
@@ -122,11 +127,30 @@ class H(BaseHTTPRequestHandler):
                 if any(w["email"].lower() == e.lower() for w in S.waitlist): return self.reply(409, {"code": "23505", "message": "duplicate key"})
                 S.waitlist.append({"email": e, "note": b.get("note"), "source": b.get("source")})
                 return self.reply(201)
+            if u.path == "/rest/v1/rpc/sp_seen":
+                d = str(b.get("p_device", ""))
+                if len(d) != 36: return self.reply(400, {"code": "22P02", "message": "invalid input syntax for type uuid"})
+                S.visits.append((d, time.strftime("%Y-%m-%d"))); return self.reply(204)
+            if u.path == "/rest/v1/rpc/sp_push_test":
+                uid = self.uid()
+                if not uid: return self.reply(401, {"message": "JWT expired"})
+                S.push_tests.append(b.get("p_endpoint")); return self.reply(200, len(S.push_tests) == 1)
+            if u.path in ("/rest/v1/rpc/sp_push_public_key", "/rest/v1/rpc/sp_push_subscribe", "/rest/v1/rpc/sp_push_unsubscribe"):
+                uid = self.uid()
+                if not uid: return self.reply(401, {"message": "JWT expired"})
+                if S.push_missing: return self.reply(404, {"code": "PGRST202", "message": "Could not find the function"})
+                if u.path.endswith("_key"): return self.reply(200, S.push_key)
+                if u.path.endswith("_subscribe"):
+                    S.push_subs[b["p_endpoint"]] = {"uid": uid, "p256dh": b["p_p256dh"], "auth": b["p_auth"]}; return self.reply(204)
+                cur = S.push_subs.get(b.get("p_endpoint"))
+                if cur and cur["uid"] == uid: del S.push_subs[b["p_endpoint"]]
+                return self.reply(204)
             if u.path == "/rest/v1/rpc/sp_delete_account":
                 uid = self.uid()
                 if not uid: return self.reply(401, {"message": "JWT expired"})
                 email = next(k for k, v in S.users.items() if v["id"] == uid)
                 del S.users[email]; S.rows.pop(uid, None)
+                for k in [k for k, v in S.push_subs.items() if v["uid"] == uid]: del S.push_subs[k]
                 for k in [k for k, v in S.tokens.items() if v[0] == uid]: del S.tokens[k]
                 return self.reply(204)
             if u.path == "/auth/v1/recover":

@@ -258,7 +258,7 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
   const CFG = window.SP_CONFIG || {};
   const SYNC_ON = !!(CFG.url && CFG.key);
   const DAY = 86400000;
-  const APP_VERSION = "9";
+  const APP_VERSION = "10";
   const $app = document.getElementById("app");
   const $toast = document.getElementById("toast");
 
@@ -429,6 +429,7 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
       keepSession(await call("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password } }));
     }
     await syncNow(true);
+    pushResync();
     return "ok";
   }
   function appUrl() { return location.origin + location.pathname; }
@@ -473,6 +474,8 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
 
   async function deleteAccount() {
     await call("/rest/v1/rpc/sp_delete_account", { method: "POST", auth: true, body: {} });
+    try { const sub = await pushSub(); if (sub) await sub.unsubscribe(); } catch {}
+    setPushWanted(false); pushOn = false;
     session = null; writeSession(); setPending(false);
     state = { v: 2, projects: [], deleted: {}, updated: 0 }; resetFingerprints(); writeLocal();
     examples = makeExamples();
@@ -482,6 +485,7 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
   async function signOut(force) {
     try { await syncNow(true); } catch {}
     if (!force && hasPending()) return "unsynced";
+    try { await pushDisable(true); } catch {}
     try { if (session) await call("/auth/v1/logout", { method: "POST", auth: true }); } catch {}
     setPending(false);
     session = null; writeSession();
@@ -548,6 +552,104 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
     })();
     try { await syncing; } finally { syncing = null; if (syncAgain) { syncAgain = false; syncNow(); } }
   }
+  // ---------- Erinnerungen als Mitteilung (Push) ----------
+  const PUSHKEY = "speicherpunkt.push";
+  let pushOn = false;   // Ist dieses Gerät gerade angemeldet? Wird beim Start und in den Einstellungen geprüft.
+  function pushSupport() { return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+  function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); }
+  function pushWanted() { try { return localStorage.getItem(PUSHKEY) === "1"; } catch { return false; } }
+  function setPushWanted(on) { try { if (on) localStorage.setItem(PUSHKEY, "1"); else localStorage.removeItem(PUSHKEY); } catch {} }
+  function b64u(bytes) { let t = ""; for (const b of new Uint8Array(bytes)) t += String.fromCharCode(b); return btoa(t).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+  function b64ud(str) { const t = atob(String(str).replace(/-/g, "+").replace(/_/g, "/")); const out = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) out[i] = t.charCodeAt(i); return out; }
+  async function swReady() {
+    const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(res => setTimeout(() => res(null), 4000))]);
+    if (!reg) { const e = new Error("sw"); e.code = "sw"; throw e; }
+    return reg;
+  }
+  async function pushSub() { if (!pushSupport()) return null; try { return await (await swReady()).pushManager.getSubscription(); } catch { return null; } }
+  function subArgs(sub) { const j = sub.toJSON(); return { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth }; }
+  async function pushEnable() {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { const e = new Error("denied"); e.code = "denied"; throw e; }
+    const key = await call("/rest/v1/rpc/sp_push_public_key", { method: "POST", auth: true, body: {} });
+    if (typeof key !== "string" || !key) { const e = new Error("notready"); e.code = "notready"; throw e; }
+    const reg = await swReady();
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && sub.options && sub.options.applicationServerKey && b64u(sub.options.applicationServerKey) !== key) { await sub.unsubscribe(); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ud(key) });
+    await call("/rest/v1/rpc/sp_push_subscribe", { method: "POST", auth: true, body: subArgs(sub) });
+    setPushWanted(true); pushOn = true;
+  }
+  async function pushDisable(keepWish) {
+    const sub = await pushSub();
+    if (sub) {
+      if (session) { try { await call("/rest/v1/rpc/sp_push_unsubscribe", { method: "POST", auth: true, body: { p_endpoint: sub.endpoint } }); } catch {} }
+      if (!keepWish) { try { await sub.unsubscribe(); } catch {} }
+    }
+    if (!keepWish) setPushWanted(false);
+    pushOn = false;
+  }
+  // Beim Start und nach dem Anmelden: Wer Mitteilungen eingeschaltet hat, bleibt beim Konto angemeldet.
+  async function pushResync() {
+    if (!SYNC_ON || !session || !pushSupport() || !pushWanted() || Notification.permission !== "granted") { pushOn = false; return; }
+    const sub = await pushSub();
+    if (!sub) { pushOn = false; return; }
+    try { await call("/rest/v1/rpc/sp_push_subscribe", { method: "POST", auth: true, body: subArgs(sub) }); pushOn = true; }
+    catch (e) { pushOn = !(e && (e.status === 404 || e.status === 401)); }
+  }
+  function pushErr(e) {
+    if (e && e.code === "denied") return "Du hast Mitteilungen nicht erlaubt. Ohne Erlaubnis kann sich die App nicht melden.";
+    if (e && e.code === "offline") return "Keine Verbindung. Versuch es nochmals, sobald du Internet hast.";
+    if (e && (e.code === "notready" || e.status === 404)) return "Erinnerungen sind auf dem Server noch nicht eingerichtet. Versuch es später nochmals.";
+    if (e && e.code === "sw") return "Die App ist noch nicht ganz geladen. Lade die Seite neu und versuch es nochmals.";
+    return "Das hat nicht geklappt (" + ((e && e.message) || "unbekannt") + ").";
+  }
+  function repaintPush() {
+    const el = $app.querySelector("#push");
+    if (!el || view.name !== "settings") return;
+    const tmp = document.createElement("div"); tmp.innerHTML = pushPanel(); el.replaceWith(tmp.firstElementChild);
+  }
+  async function refreshPush() {
+    const v = view;
+    const sub = SYNC_ON && session && pushWanted() && pushSupport() && Notification.permission === "granted" ? await pushSub() : null;
+    pushOn = !!sub; v.pushChecked = true;
+    if (view === v) repaintPush();
+  }
+  function pushPanel() {
+    if (!SYNC_ON) return "";
+    const head = `<section class="panel" id="push"><h2>Erinnerungen</h2>`;
+    if (!pushSupport()) return head + (isIOS()
+      ? `<p id="push-status">Auf dem iPhone und iPad kann sich die App melden, sobald sie auf dem Home-Bildschirm installiert ist (siehe „Als App installieren“ weiter unten). Öffne sie danach von dort und komm hierher zurück.</p>`
+      : `<p id="push-status">Dieser Browser kann keine Mitteilungen anzeigen. Der Kalendereintrag beim Speichern funktioniert trotzdem.</p>`) + `</section>`;
+    if (!session) return head + `<p id="push-status">Melde dich oben an, dann kann dich die App an deinen nächsten Schritt erinnern.</p></section>`;
+    if (Notification.permission === "denied") return head + `<p id="push-status">Mitteilungen sind für Speicherpunkt blockiert. Erlaube sie in den Einstellungen deines Browsers oder Handys und öffne diese Seite nochmals.</p></section>`;
+    const err = view.pushErr ? `<div class="error" id="push-err">${esc(view.pushErr)}</div>` : "";
+    if (pushOn) return head + `<p id="push-status"><span class="sync-dot" data-s="ok" aria-hidden="true"></span> Auf diesem Gerät eingeschaltet. Wenn du beim Speichern eine Erinnerung wählst, meldet sich die App am Morgen dieses Tages mit deinem nächsten Schritt.</p>${err}
+      <div class="row"><button data-action="push-test">Probe-Mitteilung zeigen</button><button data-action="push-off" ${view.pushBusy ? "disabled" : ""}>Ausschalten</button></div>
+      <p class="hint">Gilt nur für dieses Gerät. Schalte es auf jedem Gerät ein, auf dem du erinnert werden willst.</p></section>`;
+    return head + `<p id="push-status">Die App kann sich mit einer Mitteilung melden, wenn eine Erinnerung fällig ist, auch wenn sie geschlossen ist. In der Mitteilung steht dein nächster Mini-Schritt.</p>${err}
+      <div class="row"><button class="primary" data-action="push-on" ${view.pushBusy ? "disabled" : ""}>Erinnerungen einschalten</button></div></section>`;
+  }
+
+  // ---------- Anonyme Zählung: An welchen Tagen wird die App geöffnet? ----------
+  // Zufällige Gerätenummer, nicht mit Konto oder E-Mail verbunden. Höchstens ein Eintrag pro Tag. Abschaltbar.
+  const DKEY = "speicherpunkt.device", SEENKEY = "speicherpunkt.seen", NOCOUNT = "speicherpunkt.nocount";
+  function countOff() { try { return localStorage.getItem(NOCOUNT) === "1"; } catch { return true; } }
+  function countVisit() {
+    if (!SYNC_ON || countOff()) return;
+    try {
+      const d = new Date(), today = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+      if (localStorage.getItem(SEENKEY) === today) return;
+      let id = localStorage.getItem(DKEY);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id || "")) {
+        id = crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+        localStorage.setItem(DKEY, id);
+      }
+      localStorage.setItem(SEENKEY, today);
+      call("/rest/v1/rpc/sp_seen", { method: "POST", body: { p_device: id } }).catch(() => { try { localStorage.removeItem(SEENKEY); } catch {} });
+    } catch {}
+  }
+
   // ---------- Vorschläge für Mini-Schritte ----------
   function fallbackIdeas(ctx) {
     const n = ctx.project ? "«" + ctx.project + "»" : "das Projekt";
@@ -830,6 +932,8 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
         h += `<section class="card hero"><h2 class="eyebrow" style="--dot: var(--rose)">Alles ruht gerade</h2><p class="big-step">Das ist in Ordnung. Wenn du so weit bist, weck ein Projekt <em>auf.</em></p></section>`;
       }
       h += `<button class="add" data-action="new">+ Neues Projekt</button>`;
+      if (SYNC_ON && session && pushSupport() && !pushOn && !pushWanted() && Notification.permission !== "denied" && state.projects.some(p => p.remindAt && !p.paused && !p.finished))
+        h += `<p class="banner" id="push-hint"><span class="tag">Tipp</span><span>Soll sich die App melden, wenn eine Erinnerung fällig ist? <button class="ghostlink" data-action="settings">Mitteilungen einschalten</button></span></p>`;
       if (SYNC_ON && !session && state.projects.length) h += `<p class="banner" id="login-hint"><span class="tag">Tipp</span><span>Auch auf dem PC oder einem zweiten Handy? <button class="ghostlink" data-action="settings">Melde dich an</button>, dann erscheinen deine Projekte überall.</span></p>`;
       const others = due.concat(active.filter(p => !due.includes(p)));
       if (others.length) h += `<section class="group" aria-labelledby="all-h"><h2 id="all-h" class="label">Weitere Projekte</h2><div class="list">${others.map(projRow).join("")}</div></section>`;
@@ -960,7 +1064,9 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
       <h2 class="title md">Alles an <em>einem Ort.</em></h2>
       <div class="settings-list">
       ${accountPanel()}
-      <section class="panel"><h2>Speicherort</h2><p id="storage-info">${session ? `Deine Daten liegen auf diesem Gerät und in deinem Konto. So erscheinen sie auf allen Geräten, auf denen du angemeldet bist.` : `Deine Daten liegen ${where}`}</p></section>
+      ${pushPanel()}
+      <section class="panel"><h2>Speicherort</h2><p id="storage-info">${session ? `Deine Daten liegen auf diesem Gerät und in deinem Konto. So erscheinen sie auf allen Geräten, auf denen du angemeldet bist.` : `Deine Daten liegen ${where}`}</p>
+        ${SYNC_ON ? `<p class="hint" id="count-info">${countOff() ? "Die anonyme Zählung ist ausgeschaltet." : "Damit wir sehen, ob Speicherpunkt hilft, zählt die App anonym, an welchen Tagen sie geöffnet wird. Ohne Namen, ohne Konto, ohne Inhalte."} <button type="button" class="ghostlink" data-action="count-toggle">${countOff() ? "Wieder einschalten" : "Zählung ausschalten"}</button></p>` : ""}</section>
       <section class="panel"><h2>Als App installieren</h2>
         <div class="howto"><span class="num c4">1</span><p><strong>iPhone:</strong> In Safari auf Teilen tippen, dann „Zum Home-Bildschirm“.</p>
         <span class="num c0">2</span><p><strong>Android:</strong> In Chrome im Menü „App installieren“ oder „Zum Startbildschirm hinzufügen“.</p></div>
@@ -1156,7 +1262,31 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
     if (NEEDS_PROJECT.has(a) && !find(id || view.id)) return gone();
     switch (a) {
       case "home": view = { name: "home" }; confirmFor = null; render(); afterNav(); break;
-      case "settings": view = { name: "settings" }; confirmFor = null; render(); afterNav(); break;
+      case "settings": view = { name: "settings" }; confirmFor = null; render(); afterNav(); refreshPush(); break;
+      case "push-on": {
+        const v = view; v.pushBusy = true; v.pushErr = ""; b.disabled = true;
+        pushEnable().then(() => { v.pushBusy = false; if (view === v) repaintPush(); toast("Eingeschaltet. Die App meldet sich, wenn eine Erinnerung fällig ist."); })
+          .catch(e => { v.pushBusy = false; v.pushErr = pushErr(e); if (view === v) repaintPush(); });
+        break;
+      }
+      case "push-off": {
+        const v = view; v.pushBusy = true; v.pushErr = ""; b.disabled = true;
+        pushDisable(false).then(() => { v.pushBusy = false; if (view === v) repaintPush(); toast("Ausgeschaltet. Auf diesem Gerät kommen keine Mitteilungen mehr."); });
+        break;
+      }
+      case "push-test": {
+        // Die Probe läuft über den Server, damit der ganze Weg geprüft ist (Datenbank → Mitteilungsdienst → dieses Gerät).
+        b.disabled = true; setTimeout(() => { b.disabled = false; }, 5000);
+        pushSub().then(sub => { if (!sub) throw new Error("kein Gerät"); return call("/rest/v1/rpc/sp_push_test", { method: "POST", auth: true, body: { p_endpoint: sub.endpoint } }); })
+          .then(ok => toast(ok === false ? "Die letzte Probe ist noch unterwegs. Warte einen Moment." : "Probe ist unterwegs. Sie sollte in wenigen Sekunden erscheinen, spätestens in 5 Minuten."),
+                e => toast(e && e.code === "offline" ? "Keine Verbindung." : "Die Probe hat nicht geklappt."));
+        break;
+      }
+      case "count-toggle": {
+        try { if (countOff()) { localStorage.removeItem(NOCOUNT); countVisit(); } else { localStorage.setItem(NOCOUNT, "1"); localStorage.removeItem(DKEY); localStorage.removeItem(SEENKEY); } } catch {}
+        render(); refreshPush(); toast(countOff() ? "Zählung ausgeschaltet." : "Zählung eingeschaltet.");
+        break;
+      }
       case "open": view = { name: "project", id }; confirmFor = null; render(); afterNav(); break;
       case "new": view = { name: "save", isNew: true, draft: { remind: "3" } }; render(); afterNav(); break;
       case "save": { const p = find(id), c = p && current(p); view = { name: "save", id, draft: { remind: "3", next: c && !c.done ? c.next : "" } }; render(); afterNav(); break; }
@@ -1346,11 +1476,20 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
   resetFingerprints();
   if (SYNC_ON) session = readSession();
   const authLink = SYNC_ON ? readAuthLink() : null;
+  // Aus einer Mitteilung geöffnet (?p=Projekt): direkt zu diesem Projekt.
+  function openFromPush(id) { if (id && state.projects.some(p => p.id === id)) { view = { name: "project", id }; confirmFor = null; render(); afterNav(); } }
+  try {
+    const q = new URLSearchParams(location.search), pid = q.get("p");
+    if (pid !== null) { history.replaceState(null, "", location.pathname + location.hash); if (state.projects.some(p => p.id === pid)) view = { name: "project", id: pid }; }
+  } catch {}
   render();
   if (authLink) handleAuthLink(authLink);
   else if (session) syncNow();
+  if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && typeof e.data.open === "string") syncNow().then(() => openFromPush(e.data.open), () => openFromPush(e.data.open)); });
+  pushResync().then(() => { if (view.name === "home") softRender(); });
+  countVisit();
   window.addEventListener("hashchange", () => { const l = SYNC_ON ? readAuthLink() : null; if (l) handleAuthLink(l); });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncNow(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { syncNow(); countVisit(); } });
   window.addEventListener("online", () => syncNow());
   setInterval(() => { if (document.visibilityState === "visible") syncNow(); }, 60000);
   // installierbare App: Offline-Cache und dauerhafter Speicher

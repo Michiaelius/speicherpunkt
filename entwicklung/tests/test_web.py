@@ -44,7 +44,7 @@ def run(mobile=False, dark=False, cloud=False, tag=""):
         ctx = b.new_context(timezone_id=TZ, locale="de-CH", viewport={"width": 390, "height": 844} if mobile else {"width": 1200, "height": 900},
                             color_scheme="dark" if dark else "light", permissions=["clipboard-read", "clipboard-write"])
         if cloud: ctx.add_init_script(MOCK)
-        ctx.route(re.compile(r'https://fonts\.(googleapis|gstatic)\.com/.*'), lambda r: r.fulfill(status=200, body='', content_type='text/css'))
+        ctx.route(re.compile(r'https://fonts\.(googleapis|gstatic)\.com/.*'), lambda r: r.fulfill(status=200, body='', content_type='text/css')); ctx.route(re.compile(r'https://satqwruqmwgcflcggbul\.supabase\.co/.*'), lambda r: r.fulfill(status=204, body=''))
         pg = ctx.new_page()
         global LASTPG; LASTPG = pg
         errs = []
@@ -182,7 +182,7 @@ for kw in [dict(tag="desk_"), dict(mobile=True, dark=True, tag="mob_dark_"), dic
 def run_edge(tag="edge_"):
     t=tag
     with sync_playwright() as p:
-        b = p.chromium.launch(); ctx=b.new_context(viewport={"width":320,"height":640}); ctx.route(re.compile(r'https://fonts\.(googleapis|gstatic)\.com/.*'), lambda r: r.fulfill(status=200, body='', content_type='text/css')); pg=ctx.new_page()
+        b = p.chromium.launch(); ctx=b.new_context(viewport={"width":320,"height":640}); ctx.route(re.compile(r'https://fonts\.(googleapis|gstatic)\.com/.*'), lambda r: r.fulfill(status=200, body='', content_type='text/css')); ctx.route(re.compile(r'https://satqwruqmwgcflcggbul\.supabase\.co/.*'), lambda r: r.fulfill(status=204, body='')); pg=ctx.new_page()
         errs=[]; pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.goto(URL); pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_timeout(200)
         longw = "Donaudampfschifffahrtsgesellschaftskapitänsmützenhalterung"*3
@@ -209,7 +209,7 @@ def run_edge(tag="edge_"):
         b.close()
 def run_pwa():
     with sync_playwright() as p:
-        b=p.chromium.launch(); ctx=b.new_context(); pg=ctx.new_page(); errs=[]
+        b=p.chromium.launch(); ctx=b.new_context(); ctx.route(re.compile(r'https://satqwruqmwgcflcggbul\.supabase\.co/.*'), lambda r: r.fulfill(status=204, body='')); pg=ctx.new_page(); errs=[]
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: errs.append(m.text) if m.type=="error" else None)
         pg.goto(URL); pg.wait_for_timeout(1500)
