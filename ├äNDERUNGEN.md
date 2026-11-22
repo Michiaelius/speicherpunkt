@@ -1,5 +1,22 @@
 # Änderungen
 
+## Version 8 (19. November 2026)
+
+Neu
+- **Schnittstelle für eigene Programme** (zum Beispiel ZbiWeb): Projekte lesen, suchen, anlegen, ändern, löschen
+  und Speicherpunkte setzen. Beschreibung in `SCHNITTSTELLE.md`, Code in `supabase/functions/api/`.
+- In den Einstellungen unter „Schnittstelle“: API-Token erzeugen, kopieren, ersetzen und löschen,
+  mit Anzeige, wann er zuletzt benutzt wurde. Der Token wird nur einmal angezeigt und nur als Prüfsumme gespeichert.
+  Höchstens 60 Aufrufe pro Minute.
+
+Verbessert
+- **Kein Datenverlust bei gleichzeitigem Schreiben:** Schreiben zwei Geräte oder App und Schnittstelle im selben Moment,
+  liest die App neu und führt zusammen, statt die andere Änderung zu überschreiben (Revisionszähler `rev`).
+- **Weniger unnötiges Schreiben:** Die App hat bisher bei fast jedem Abgleich die Daten neu hochgeladen, weil die
+  Datenbank die Reihenfolge der Felder ändert. Jetzt liest sie nur, wenn sich nichts geändert hat.
+- Datenschutzerklärung um die Schnittstelle ergänzt.
+- Die Datenbankregeln werden jetzt gegen ein echtes Postgres mit PostgREST getestet, nicht nur gegen einen Nachbau.
+
 ## Version 7 (15. November 2026)
 
 Neu

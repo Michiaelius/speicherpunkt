@@ -82,3 +82,159 @@ create policy "sp_waitlist eintragen" on public.sp_waitlist for insert to anon, 
 
 revoke all on public.sp_waitlist from anon, authenticated;
 grant insert on public.sp_waitlist to anon, authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- Schnittstelle (API) für andere Programme, zum Beispiel ZbiWeb. Ab Version 8.
+-- ---------------------------------------------------------------------------------------------
+
+-- Revisionszähler: Jede Änderung an sp_state erhöht rev um 1. App und Schnittstelle schreiben nur,
+-- wenn rev seit dem Lesen gleich geblieben ist. So überschreibt niemand die Änderung eines anderen.
+alter table public.sp_state add column if not exists rev bigint not null default 0;
+
+create or replace function public.sp_state_bump()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.rev := old.rev + 1;
+  return new;
+end $$;
+
+drop trigger if exists sp_state_bump on public.sp_state;
+create trigger sp_state_bump before update on public.sp_state
+  for each row execute function public.sp_state_bump();
+
+-- Ein API-Token pro Person. Gespeichert wird nur eine Prüfsumme (SHA-256), nie der Token selbst.
+create table if not exists public.sp_api_tokens (
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  token_hash   text not null unique,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  window_start timestamptz not null default now(),   -- Beginn der laufenden Minute (Ratenbegrenzung)
+  window_hits  int not null default 0
+);
+alter table public.sp_api_tokens enable row level security;   -- keine Policies: nur die Funktionen unten
+revoke all on public.sp_api_tokens from anon, authenticated;
+
+-- In der App: neuen Token erzeugen. Ein bestehender Token wird dabei ungültig.
+create or replace function public.sp_api_token_new()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare t text;
+begin
+  if auth.uid() is null then raise exception 'nicht angemeldet'; end if;
+  t := 'sp_' || replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  insert into public.sp_api_tokens (user_id, token_hash, created_at, last_used_at, window_start, window_hits)
+  values (auth.uid(), encode(sha256(convert_to(t, 'UTF8')), 'hex'), now(), null, now(), 0)
+  on conflict (user_id) do update
+    set token_hash = excluded.token_hash, created_at = excluded.created_at,
+        last_used_at = null, window_start = excluded.window_start, window_hits = 0;
+  return t;
+end $$;
+
+-- In der App: Ist ein Token aktiv, seit wann, wann zuletzt benutzt?
+create or replace function public.sp_api_token_info()
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare r json;
+begin
+  if auth.uid() is null then raise exception 'nicht angemeldet'; end if;
+  -- Zeitpunkte als Millisekunden seit 1970, so liest jeder Browser sie gleich.
+  select json_build_object('aktiv', true, 'erstellt', (extract(epoch from created_at) * 1000)::bigint,
+                           'zuletzt', (extract(epoch from last_used_at) * 1000)::bigint) into r
+    from public.sp_api_tokens where user_id = auth.uid();
+  return coalesce(r, json_build_object('aktiv', false));
+end $$;
+
+-- In der App: Token löschen. Danach antwortet die Schnittstelle mit 401.
+create or replace function public.sp_api_token_revoke()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'nicht angemeldet'; end if;
+  delete from public.sp_api_tokens where user_id = auth.uid();
+end $$;
+
+-- Für die Edge Function «api»: Token prüfen, Aufruf zählen (höchstens 60 pro Minute), Daten liefern.
+create or replace function public.sp_api_open(p_token text, p_count boolean default true)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  tk public.sp_api_tokens%rowtype;
+  st public.sp_state%rowtype;
+begin
+  if p_token is null or p_token !~ '^sp_[0-9a-f]{64}$' then return jsonb_build_object('status', 401); end if;
+  select * into tk from public.sp_api_tokens
+    where token_hash = encode(sha256(convert_to(p_token, 'UTF8')), 'hex') for update;
+  if not found then return jsonb_build_object('status', 401); end if;
+  if p_count then
+    if tk.window_start <= now() - interval '1 minute' then
+      update public.sp_api_tokens set window_start = now(), window_hits = 1, last_used_at = now() where user_id = tk.user_id;
+    elsif tk.window_hits >= 60 then
+      return jsonb_build_object('status', 429,
+        'retry', greatest(1, ceil(extract(epoch from (tk.window_start + interval '1 minute' - now()))))::int);
+    else
+      update public.sp_api_tokens set window_hits = window_hits + 1, last_used_at = now() where user_id = tk.user_id;
+    end if;
+  end if;
+  select * into st from public.sp_state where user_id = tk.user_id;
+  if not found then return jsonb_build_object('status', 200, 'data', null, 'rev', null); end if;
+  return jsonb_build_object('status', 200, 'data', st.data, 'rev', st.rev);
+end $$;
+
+-- Für die Edge Function «api»: Daten schreiben, aber nur wenn rev noch stimmt (sonst 409, die Funktion liest neu).
+create or replace function public.sp_api_write(p_token text, p_rev bigint, p_data jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  u uuid;
+  r bigint;
+  ms bigint := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+begin
+  if p_token is null or p_token !~ '^sp_[0-9a-f]{64}$' then return jsonb_build_object('status', 401); end if;
+  select user_id into u from public.sp_api_tokens where token_hash = encode(sha256(convert_to(p_token, 'UTF8')), 'hex');
+  if not found then return jsonb_build_object('status', 401); end if;
+  if p_data is null or jsonb_typeof(p_data) <> 'object' or jsonb_typeof(p_data -> 'projects') is distinct from 'array'
+     or octet_length(p_data::text) > 5000000 then
+    return jsonb_build_object('status', 422);
+  end if;
+  if p_rev is null then
+    insert into public.sp_state (user_id, data, updated_at) values (u, p_data, ms)
+      on conflict (user_id) do nothing
+      returning rev into r;
+  else
+    update public.sp_state set data = p_data, updated_at = ms
+      where user_id = u and rev = p_rev
+      returning rev into r;
+  end if;
+  if r is null then return jsonb_build_object('status', 409); end if;
+  return jsonb_build_object('status', 200, 'rev', r);
+end $$;
+
+revoke all on function public.sp_api_token_new()    from public, anon;
+revoke all on function public.sp_api_token_info()   from public, anon;
+revoke all on function public.sp_api_token_revoke() from public, anon;
+grant execute on function public.sp_api_token_new()    to authenticated;
+grant execute on function public.sp_api_token_info()   to authenticated;
+grant execute on function public.sp_api_token_revoke() to authenticated;
+-- Die beiden folgenden ruft die Edge Function ohne Anmeldung auf; sie prüfen den Token selbst.
+revoke all on function public.sp_api_open(text, boolean)       from public;
+revoke all on function public.sp_api_write(text, bigint, jsonb) from public;
+grant execute on function public.sp_api_open(text, boolean)       to anon, authenticated;
+grant execute on function public.sp_api_write(text, bigint, jsonb) to anon, authenticated;

@@ -188,6 +188,9 @@ input[aria-invalid="true"] { border-color: var(--coral); }
 textarea { min-height: 100px; resize: vertical; font-family: var(--font-serif); }
 .hint { color: var(--muted); font-size: .84rem; }
 .error { color: var(--terra); font-size: .9rem; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; word-break: break-all; }
+input[type=text].mono { font-size: .86rem; }
+code.mono { font-size: .8rem; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
 .finish-offer { --tint: var(--mustard); }
 .finish-offer .ft { font-family: var(--font-serif); font-size: 1.25rem; }
 button.finish-btn { align-self: flex-start; background: var(--mustard); border-color: var(--mustard); color: #2b2205; font-weight: 600; }
@@ -258,7 +261,7 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
   const CFG = window.SP_CONFIG || {};
   const SYNC_ON = !!(CFG.url && CFG.key);
   const DAY = 86400000;
-  const APP_VERSION = "7";
+  const APP_VERSION = "8";
   const $app = document.getElementById("app");
   const $toast = document.getElementById("toast");
 
@@ -341,6 +344,9 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
   }
   function tombstone(id) { state.deleted[id] = now(); delete fp[id]; }
 
+  // Vergleich unabhängig von der Reihenfolge der Felder. Die Datenbank (jsonb) sortiert Felder um;
+  // ohne diesen Vergleich würde die App bei jedem Abgleich unnötig schreiben.
+  function canon(v) { return JSON.stringify(v, (k, x) => x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, key) => { o[key] = x[key]; return o; }, {}) : x); }
   function merge(a, b) {
     const out = { v: 2, projects: [], deleted: {}, updated: Math.max(a.updated || 0, b.updated || 0) };
     for (const src of [a.deleted || {}, b.deleted || {}]) for (const [id, t] of Object.entries(src)) out.deleted[id] = Math.max(out.deleted[id] || 0, t);
@@ -488,6 +494,32 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
     return "ok";
   }
   let syncTimer = null, syncing = null, syncAgain = false;
+  // Mit Revisionszähler (rev, ab supabase-setup.sql Version 8) wird nur geschrieben, wenn seit dem Lesen niemand
+  // anderes geschrieben hat, etwa ein zweites Gerät oder die Schnittstelle. Sonst neu lesen und nochmals zusammenführen.
+  // Fehlt die Spalte noch in der Datenbank, schreibt die App wie bisher (ohne diese Prüfung).
+  let useRev = true;
+  async function readRemote() {
+    if (useRev) {
+      try { return await call("/rest/v1/sp_state?select=data,updated_at,rev", { auth: true }); }
+      catch (e) { if (e.code !== "42703" && !(e.status === 400 && /rev/.test(e.message))) throw e; useRev = false; }
+    }
+    return call("/rest/v1/sp_state?select=data,updated_at", { auth: true });
+  }
+  // true: geschrieben. false: jemand war schneller, nochmals lesen.
+  async function writeRemote(rows, merged) {
+    const body = { user_id: session.user.id, data: merged, updated_at: now() };
+    if (!useRev) {
+      await call("/rest/v1/sp_state?on_conflict=user_id", { method: "POST", auth: true, headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body });
+      return true;
+    }
+    if (rows.length) {
+      const res = await call("/rest/v1/sp_state?user_id=eq." + encodeURIComponent(session.user.id) + "&rev=eq." + Number(rows[0].rev || 0) + "&select=rev",
+        { method: "PATCH", auth: true, headers: { Prefer: "return=representation" }, body: { data: merged, updated_at: body.updated_at } });
+      return Array.isArray(res) && res.length > 0;
+    }
+    try { await call("/rest/v1/sp_state", { method: "POST", auth: true, headers: { Prefer: "return=minimal" }, body }); return true; }
+    catch (e) { if (e.status === 409 || e.code === "23505") return false; throw e; }
+  }
   function scheduleSync() { if (!session) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 1200); }
   async function syncNow(force) {
     if (!SYNC_ON || !session) return;
@@ -496,19 +528,20 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
     syncing = (async () => {
       sync.state = "busy"; paintSync();
       try {
-        const rows = await call("/rest/v1/sp_state?select=data,updated_at", { auth: true });
-        const remote = rows && rows[0] && valid(rows[0].data) ? normalize(rows[0].data) : { v: 2, projects: [], deleted: {}, updated: 0 };
-        const before = JSON.stringify(state.projects);
-        const merged = merge(state, remote);
-        state = merged; resetFingerprints(); writeLocal();
-        if (JSON.stringify(remote.projects) !== JSON.stringify(merged.projects) || JSON.stringify(remote.deleted || {}) !== JSON.stringify(merged.deleted) || !rows.length) {
-          await call("/rest/v1/sp_state?on_conflict=user_id", { method: "POST", auth: true,
-            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-            body: { user_id: session.user.id, data: merged, updated_at: now() } });
+        const before = canon(state.projects);
+        for (let attempt = 0; ; attempt++) {
+          const rows = await readRemote();
+          const remote = rows && rows[0] && valid(rows[0].data) ? normalize(rows[0].data) : { v: 2, projects: [], deleted: {}, updated: 0 };
+          const merged = merge(state, remote);
+          merged.projects = merged.projects.map(cleanProject).filter(Boolean);   // gleiche Form wie remote, sonst sähe es nach Änderung aus
+          state = merged; resetFingerprints(); writeLocal();
+          if (canon(remote.projects) === canon(merged.projects) && canon(remote.deleted || {}) === canon(merged.deleted) && rows.length) break;
+          if (await writeRemote(rows, merged)) break;
+          if (attempt >= 4) throw new Error("Gleichzeitige Änderungen, gleich nochmals");
         }
         sync = { state: "ok", at: now(), msg: "" };
         if (changeSeq === seqAtStart) setPending(false);
-        if (before !== JSON.stringify(state.projects)) softRender();
+        if (before !== canon(state.projects)) softRender();
       } catch (e) {
         if (e.code === "offline") sync = { state: "offline", at: sync.at, msg: "" };
         else if (e.code === "signed_out" || e.status === 401) { session = null; writeSession(); sync = { state: "out", at: 0, msg: "Bitte melde dich neu an." }; }
@@ -518,6 +551,55 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
     })();
     try { await syncing; } finally { syncing = null; if (syncAgain) { syncAgain = false; syncNow(); } }
   }
+  // ---------- Schnittstelle für eigene Programme (API-Token) ----------
+  function apiBase() { return String(CFG.url || "").replace(/\/+$/, "") + "/functions/v1/api"; }
+  function apiErr(e) {
+    if (e && e.code === "offline") return "Keine Verbindung. Versuch es nochmals, sobald du Internet hast.";
+    if (e && e.status === 404) return "Die Schnittstelle ist in der Datenbank noch nicht eingerichtet (supabase-setup.sql ausführen).";
+    return "Das hat nicht geklappt (" + ((e && e.message) || "unbekannt") + ").";
+  }
+  // Nur den Kasten «Schnittstelle» neu zeichnen, damit andere Eingaben nicht verloren gehen.
+  function repaintApi() {
+    const el = $app.querySelector("#api");
+    if (!el || view.name !== "settings") return;
+    const tmp = document.createElement("div"); tmp.innerHTML = apiPanel(); el.replaceWith(tmp.firstElementChild);
+  }
+  async function refreshApi() {
+    const v = view;
+    try { v.apiInfo = await call("/rest/v1/rpc/sp_api_token_info", { method: "POST", auth: true, body: {} }) || { aktiv: false }; }
+    catch (e) { v.apiInfo = { err: apiErr(e), missing: e && e.status === 404 }; }
+    if (view === v) repaintApi();
+  }
+  function apiPanel() {
+    if (!SYNC_ON || !session) return "";
+    const intro = `<p>Damit kann ein eigenes Programm, zum Beispiel ein persönlicher Assistent, deine Projekte lesen und Speicherpunkte setzen. Brauchst du das nicht, lass es einfach weg.</p>`;
+    if (!view.apiOpen) return `<section class="panel" id="api"><h2>Schnittstelle</h2>${intro}
+      <div class="row"><button data-action="api-open">Einrichten</button></div></section>`;
+    const i = view.apiInfo || { loading: true };
+    const when = s => { const t = typeof s === "number" ? s : Date.parse(s); return isFinite(t) && t > 0 ? ago(t) : "unbekannt"; };
+    const status = i.loading ? "Wird geladen …" : i.err ? i.err
+      : i.aktiv ? "Ein Token ist aktiv. Erstellt " + when(i.erstellt) + ", " + (i.zuletzt ? "zuletzt benutzt " + when(i.zuletzt) : "noch nie benutzt") + "."
+      : "Kein Token aktiv. Kein Programm hat Zugriff.";
+    let body = "";
+    if (view.apiToken) body = `<div class="field"><label for="f-token">Dein neuer Token</label>
+        <input type="text" id="f-token" class="mono" readonly value="${esc(view.apiToken)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <p class="hint" id="token-note">Er wird nur jetzt angezeigt. Kopiere ihn und trag ihn im anderen Programm ein. Wer ihn hat, kann deine Projekte lesen und ändern, also gib ihn niemandem weiter.</p>
+        <div class="row"><button class="primary" data-action="api-copy">Token kopieren</button><button data-action="api-done">Fertig</button></div>`;
+    else if (confirmFor === "api-new") body = `<p>Der bisherige Token hört sofort auf zu funktionieren. Programme, die ihn benutzen, brauchen dann den neuen.</p>
+        <div class="row"><button class="primary" data-action="api-new-yes">Neuen Token erzeugen</button><button data-action="api-cancel">Abbrechen</button></div>`;
+    else if (confirmFor === "api-revoke") body = `<p>Token löschen? Programme, die ihn benutzen, haben danach keinen Zugriff mehr.</p>
+        <div class="row"><button class="danger" data-action="api-revoke-yes">Ja, Token löschen</button><button data-action="api-cancel">Abbrechen</button></div>`;
+    else if (i.loading || i.missing) body = "";
+    else if (i.err) body = `<div class="row"><button data-action="api-open">Nochmals versuchen</button></div>`;
+    else if (i.aktiv) body = `<div class="row"><button data-action="api-new">Neuen Token erzeugen</button><button data-action="api-revoke">Token löschen</button></div>`;
+    else body = `<div class="row"><button class="primary" data-action="api-new-yes">Token erzeugen</button></div>`;
+    return `<section class="panel" id="api"><h2>Schnittstelle</h2>
+      <p class="small" id="api-status" aria-live="polite">${esc(status)}</p>
+      ${body}
+      <p class="hint">Ein Programm mit Token kann deine Projekte lesen, suchen, anlegen, ändern und löschen, aber nur die in deinem Konto.
+      Adresse: <code class="mono" id="api-url">${esc(apiBase())}</code></p></section>`;
+  }
+
   // ---------- Vorschläge für Mini-Schritte ----------
   function fallbackIdeas(ctx) {
     const n = ctx.project ? "«" + ctx.project + "»" : "das Projekt";
@@ -948,6 +1030,7 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
         <div class="row"><button class="primary" type="submit">Ja, ersetzen</button><button type="button" data-action="imp-no">Abbrechen</button></div>`
         : `<div class="row"><button type="submit">Einfügen und ersetzen</button></div>`}
       </form>
+      ${apiPanel()}
       <section class="panel"><h2>Alles löschen</h2>
         ${confirmFor === "wipe" ? `<p>Wirklich alle Projekte löschen? Das lässt sich nicht rückgängig machen.</p>
           <div class="row"><button class="primary" data-action="wipe-yes">Ja, alles löschen</button><button data-action="wipe-no">Abbrechen</button></div>`
@@ -1238,6 +1321,33 @@ nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
       }
       case "imp-no": { view = { name: "settings" }; render(); break; }
       case "wipe-no": confirmFor = null; render(); break;
+      case "api-open": view.apiOpen = true; view.apiInfo = { loading: true }; confirmFor = null; repaintApi(); refreshApi(); break;
+      case "api-new": confirmFor = "api-new"; repaintApi(); break;
+      case "api-revoke": confirmFor = "api-revoke"; repaintApi(); break;
+      case "api-cancel": confirmFor = null; repaintApi(); break;
+      case "api-done": view.apiToken = null; repaintApi(); { const s = $app.querySelector("#api-status"); if (s) { s.setAttribute("tabindex", "-1"); s.focus(); } } break;
+      case "api-new-yes": {
+        b.disabled = true; const v = view;
+        call("/rest/v1/rpc/sp_api_token_new", { method: "POST", auth: true, body: {} }).then(tok => {
+          if (typeof tok !== "string" || !tok) throw new Error("kein Token erhalten");
+          confirmFor = null; v.apiToken = tok; v.apiInfo = { aktiv: true, erstellt: now(), zuletzt: null };
+          if (view === v) { repaintApi(); const f = $app.querySelector("#f-token"); if (f) { f.focus(); f.select(); } }
+        }).catch(err => { confirmFor = null; v.apiInfo = { ...(v.apiInfo || {}), loading: false, err: apiErr(err), missing: err && err.status === 404 }; if (view === v) repaintApi(); });
+        break;
+      }
+      case "api-copy": {
+        const f = $app.querySelector("#f-token"); if (!f) break;
+        const fallback = () => { f.focus(); f.select(); toast("Token markiert. Kopiere ihn von Hand."); };
+        try { navigator.clipboard.writeText(f.value).then(() => toast("Token kopiert."), fallback); } catch { fallback(); }
+        break;
+      }
+      case "api-revoke-yes": {
+        b.disabled = true; const v = view;
+        call("/rest/v1/rpc/sp_api_token_revoke", { method: "POST", auth: true, body: {} }).then(() => {
+          confirmFor = null; v.apiToken = null; v.apiInfo = { aktiv: false }; if (view === v) repaintApi(); toast("Token gelöscht. Kein Programm hat mehr Zugriff.");
+        }).catch(err => { confirmFor = null; v.apiInfo = { ...(v.apiInfo || {}), err: apiErr(err) }; if (view === v) repaintApi(); });
+        break;
+      }
       case "wipe-yes": { const ids = state.projects.map(p => p.id); state.projects = []; ids.forEach(tombstone); examples = makeExamples(); persist(); } confirmFor = null; view = { name: "home" }; render(); toast("Alles gelöscht."); break;
     }
   });

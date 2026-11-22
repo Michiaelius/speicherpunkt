@@ -10,7 +10,11 @@ class Store:
         self.users = {}      # email -> {id, password}
         self.tokens = {}     # access -> (uid, exp)
         self.refresh = {}    # refresh -> uid
-        self.rows = {}       # uid -> {data, updated_at}
+        self.rows = {}       # uid -> {data, updated_at, rev}
+        self.no_rev = False  # True: Datenbank ohne rev-Spalte (supabase-setup.sql noch nicht neu ausgeführt)
+        self.before_patch = None  # Testhaken: läuft vor einem bedingten Schreiben
+        self.api_tokens = {} # uid -> {token, erstellt, zuletzt}
+        self.api_missing = False
         self.down = False
         self.expires_in = 3600
         self.calls = []
@@ -34,7 +38,7 @@ class H(BaseHTTPRequestHandler):
     def cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "apikey, authorization, content-type, prefer")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
     def reply(self, code, obj=None):
         body = b"" if obj is None else json.dumps(obj).encode()
         self.send_response(code); self.cors()
@@ -58,8 +62,10 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/rest/v1/sp_state":
             uid = self.uid()
             if not uid: return self.reply(401, {"message": "JWT expired", "code": "PGRST301"})
+            sel = parse_qs(u.query).get("select", ["data,updated_at"])[0].split(",")
+            if "rev" in sel and S.no_rev: return self.reply(400, {"code": "42703", "message": "column sp_state.rev does not exist"})
             row = S.rows.get(uid)
-            return self.reply(200, [row] if row else [])
+            return self.reply(200, [{k: row.get(k, 0) for k in sel}] if row else [])
         if u.path == "/auth/v1/user":
             uid = self.uid()
             if not uid: return self.reply(401, {"msg": "invalid JWT"})
@@ -134,8 +140,39 @@ class H(BaseHTTPRequestHandler):
                 uid = self.uid()
                 if not uid: return self.reply(401, {"message": "JWT expired", "code": "PGRST301"})
                 if b.get("user_id") != uid: return self.reply(403, {"message": "new row violates row-level security policy", "code": "42501"})
-                S.rows[uid] = {"data": b["data"], "updated_at": b.get("updated_at", 0)}
+                old = S.rows.get(uid)
+                if old and "on_conflict" not in q: return self.reply(409, {"code": "23505", "message": "duplicate key value violates unique constraint"})
+                S.rows[uid] = {"data": b["data"], "updated_at": b.get("updated_at", 0), "rev": (old.get("rev", 0) + 1) if old else 0}
                 return self.reply(201)
+            if u.path in ("/rest/v1/rpc/sp_api_token_new", "/rest/v1/rpc/sp_api_token_info", "/rest/v1/rpc/sp_api_token_revoke"):
+                uid = self.uid()
+                if not uid: return self.reply(401, {"message": "JWT expired"})
+                if S.api_missing: return self.reply(404, {"code": "PGRST202", "message": "Could not find the function"})
+                if u.path.endswith("_new"):
+                    tok = "sp_" + secrets.token_hex(32)
+                    S.api_tokens[uid] = {"token": tok, "erstellt": int(time.time() * 1000), "zuletzt": None}
+                    return self.reply(200, tok)
+                if u.path.endswith("_info"):
+                    t = S.api_tokens.get(uid)
+                    return self.reply(200, {"aktiv": True, "erstellt": t["erstellt"], "zuletzt": t["zuletzt"]} if t else {"aktiv": False})
+                S.api_tokens.pop(uid, None)
+                return self.reply(204)
+        self.reply(404, {"message": "not found"})
+
+    def do_PATCH(self):
+        if not self.guard(): return
+        u = urlparse(self.path); q = parse_qs(u.query); S.calls.append(("PATCH", u.path + "?" + u.query)); b = self.body()
+        if u.path == "/rest/v1/sp_state":
+            uid = self.uid()
+            if not uid: return self.reply(401, {"message": "JWT expired", "code": "PGRST301"})
+            if S.no_rev: return self.reply(400, {"code": "42703", "message": "column sp_state.rev does not exist"})
+            if S.before_patch: f, S.before_patch = S.before_patch, None; f(uid)
+            with S.lock:
+                row = S.rows.get(uid)
+                want_uid = q.get("user_id", [""])[0].replace("eq.", ""); want_rev = q.get("rev", [""])[0].replace("eq.", "")
+                if not row or want_uid != uid or str(row.get("rev", 0)) != want_rev: return self.reply(200, [])
+                row.update({"data": b["data"], "updated_at": b.get("updated_at", 0), "rev": row.get("rev", 0) + 1})
+                return self.reply(200, [{"rev": row["rev"]}])
         self.reply(404, {"message": "not found"})
 
 def start(port=0):
