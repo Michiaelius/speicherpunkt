@@ -1,0 +1,1373 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Sicherheitsregeln: Die App darf nur mit sich selbst und mit Supabase sprechen. Bei einer neuen Supabase-Adresse hier und in SP_CONFIG anpassen. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://satqwruqmwgcflcggbul.supabase.co; manifest-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<title>Speicherpunkt</title>
+<meta name="description" content="Setz einen Speicherpunkt, bevor du aufhörst. Wenn du zurückkommst, zeigt dir Speicherpunkt, wo du warst, und genau einen nächsten Schritt.">
+<meta name="theme-color" content="#f7f2ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1a20" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Speicherpunkt">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preload" href="fonts/lora.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/inter-400.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face { font-family: "Lora"; src: url("fonts/lora.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lora"; src: url("fonts/lora-italic.woff2") format("woff2"); font-weight: 400 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/inter-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/inter-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/inter-600.woff2") format("woff2"); font-weight: 600 700; font-style: normal; font-display: swap; }
+
+/* Layout: wie der Papier-Planer – warmes Papier, weisse Karten, eine Farbe pro Bereich, Lora mit farbigen Kursivwörtern. */
+:root {
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); color-scheme: light;
+  --paper: #f7f2ea; --card: #fffdf9; --sunk: #f1ebe1; --line: #e9e0d2; --ink: #2b2830; --muted: #716b74; --faint: #a59d97;
+  --terra: #c46d49; --mustard: #e4b860; --coral: #e3916f; --lavender: #a497d6; --sage: #93b29f; --teal: #6fa39b; --sky: #8bb1d1; --rose: #e3a0b1; --taupe: #b9ad9e;
+  --mustard-ink: #9a7320; --sage-ink: #4f7a66; --lav-ink: #6a5aa8; --rose-ink: #b0607a; --sky-ink: #48759b;
+  --cta: #2b2830; --on-cta: #fdfaf5;
+  --blob-a: .9;
+  --font-serif: "Lora", "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  --r: 16px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #1c1a20; --card: #25222a; --sunk: #2c2932; --line: #39343f; --ink: #f0eae2; --muted: #aaa2a9; --faint: #7f7880;
+  --terra: #e79a77; --mustard: #e9c374; --coral: #e79d7e; --lavender: #b3a7e2; --sage: #9fbfab; --teal: #84b5ad; --sky: #9bbfdc; --rose: #e9aebd; --taupe: #9e9385;
+  --mustard-ink: #ecc77a; --sage-ink: #a7c9b5; --lav-ink: #c2b7ee; --rose-ink: #efb4c3; --sky-ink: #a9c9e6;
+  --cta: #f0eae2; --on-cta: #1c1a20; --blob-a: .42; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #1c1a20; --card: #25222a; --sunk: #2c2932; --line: #39343f; --ink: #f0eae2; --muted: #aaa2a9; --faint: #7f7880;
+  --terra: #e79a77; --mustard: #e9c374; --coral: #e79d7e; --lavender: #b3a7e2; --sage: #9fbfab; --teal: #84b5ad; --sky: #9bbfdc; --rose: #e9aebd; --taupe: #9e9385;
+  --mustard-ink: #ecc77a; --sage-ink: #a7c9b5; --lav-ink: #c2b7ee; --rose-ink: #efb4c3; --sky-ink: #a9c9e6;
+  --cta: #f0eae2; --on-cta: #1c1a20; --blob-a: .42; color-scheme: dark }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; background: var(--paper); color: var(--ink); font-family: var(--font-sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+[hidden] { display: none !important; }
+p { margin: 0; }
+h1, h2, h3 { margin: 0; font-family: var(--font-serif); font-weight: 400; letter-spacing: -.01em; text-wrap: balance; }
+em { font-style: italic; color: var(--accent, var(--terra)); }
+
+.app { position: relative; z-index: 1; max-width: 600px; margin: 0 auto; padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px)); padding-block: 22px 72px; display: flex; flex-direction: column; gap: 22px; }
+
+/* Bereichsfarben wie die Reiter im Planer */
+[data-view="home"] { --accent: var(--terra); --dot: var(--coral); }
+[data-view="project"] { --accent: var(--sage-ink); --dot: var(--sage); }
+[data-view="focus"] { --accent: var(--mustard-ink); --dot: var(--mustard); }
+[data-view="save"] { --accent: var(--lav-ink); --dot: var(--lavender); }
+[data-view="finished"] { --accent: var(--mustard-ink); --dot: var(--mustard); }
+[data-view="settings"] { --accent: var(--sky-ink); --dot: var(--sky); }
+
+/* dekorative Kreise (Titelseite) */
+body { position: relative; }
+.blobs { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.blobs span { position: absolute; border-radius: 50%; opacity: var(--blob-a); }
+.blobs .b1 { width: 300px; height: 300px; right: -110px; top: -120px; background: var(--mustard); }
+.blobs .b2 { width: 110px; height: 110px; right: 150px; top: 96px; background: var(--coral); opacity: calc(var(--blob-a) * .85); }
+.blobs .b3 { width: 70px; height: 70px; right: -14px; top: 210px; background: var(--lavender); }
+.blobs .b4 { width: 200px; height: 200px; left: -110px; bottom: -120px; background: var(--sage); }
+.blobs .b5 { width: 90px; height: 90px; left: 50px; bottom: -55px; background: var(--sky); }
+.blobs .b6 { width: 34px; height: 34px; right: 34px; bottom: 34px; background: var(--rose); }
+body:not([data-view="home"]):not([data-view="finished"]) .blobs { display: none; }
+@media (max-width: 520px) { .blobs .b1 { width: 190px; height: 190px; right: -95px; top: -95px; } .blobs .b2 { width: 64px; height: 64px; right: 66px; top: 74px; } .blobs .b3 { right: -18px; top: 120px; width: 44px; height: 44px; } }
+
+/* Kopfzeile: farbiger Punkt + Label links, Pillen-Button rechts */
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; }
+.eyebrow { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-sans); font-weight: 600; font-size: .7rem; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+.eyebrow::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--dot, var(--taupe)); flex: none; }
+.eyebrow.plain::before { display: none; }
+header.top > .eyebrow { min-width: 0; overflow-wrap: break-word; line-height: 1.4; letter-spacing: .14em; }
+.proj-title { font-family: var(--font-serif); font-size: 1.15rem; color: var(--muted); margin-bottom: -8px; overflow-wrap: anywhere; }
+header.top > .row { flex: none; flex-wrap: nowrap; gap: 6px; }
+.huge, .big-step, .title { overflow-wrap: anywhere; }
+.label { font-family: var(--font-sans); font-weight: 600; font-size: .68rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+
+button { font: inherit; cursor: pointer; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 11px 20px; min-height: 46px; font-size: .95rem; font-weight: 500; transition: border-color .15s, background-color .15s, transform .1s; }
+button:hover { border-color: var(--faint); }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--cta); color: var(--on-cta); border-color: var(--cta); font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+button.primary:hover { border-color: var(--cta); opacity: .92; }
+button.pill { min-height: 34px; padding: 6px 14px; font-size: .68rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); background: var(--card); }
+button.add { width: 100%; background: transparent; border-style: dashed; color: var(--muted); }
+button.wide { width: 100%; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--mustard); outline-offset: 2px; }
+.arrow { font-size: 1.05em; line-height: 1; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.row.stack { flex-direction: column; align-items: stretch; }
+.row.stack > button { width: 100%; }
+
+/* Titel mit farbigem Kursivwort */
+.title { font-size: clamp(2.3rem, 10vw, 3.2rem); line-height: 1.05; }
+.title.md { font-size: clamp(1.9rem, 8vw, 2.5rem); }
+.title.center { text-align: center; }
+.sub { color: var(--muted); font-size: .98rem; max-width: 46ch; }
+.wave { display: block; width: 92px; height: 22px; color: var(--faint); }
+.intro { display: flex; flex-direction: column; gap: 14px; padding-top: 18px; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.card.tint { border-color: transparent; background: color-mix(in srgb, var(--tint, var(--sage)) 18%, var(--card)); }
+.hero .proj-name { font-family: var(--font-serif); font-size: 1.05rem; color: var(--muted); }
+.big-step { font-family: var(--font-serif); font-size: clamp(1.6rem, 7vw, 2.05rem); line-height: 1.18; }
+.small { font-size: .78rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-static { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; font-size: .74rem; color: var(--muted); }
+.chip { min-height: 38px; padding: 7px 15px; font-size: .88rem; }
+.chip[aria-pressed="true"] { background: color-mix(in srgb, var(--lavender) 22%, var(--card)); border-color: var(--lavender); color: var(--lav-ink); font-weight: 600; }
+
+.banner { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px dashed var(--line); border-radius: var(--r); padding: 12px 16px; font-size: .9rem; color: var(--muted); }
+.tag { font-size: .64rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; background: color-mix(in srgb, var(--mustard) 30%, var(--card)); color: var(--ink); white-space: nowrap; }
+
+/* Projektliste wie „Wohin heute?“ */
+.group { display: flex; flex-direction: column; gap: 10px; }
+.group > .label, .group > summary { padding: 0 4px; }
+details.group > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after, details.history > summary::after { content: "›"; font-size: 1rem; letter-spacing: 0; transition: transform .15s; }
+details[open] > summary::after { transform: rotate(90deg); }
+.list { display: flex; flex-direction: column; gap: 10px; }
+.proj { --pc: var(--sage); text-align: left; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; width: 100%; padding: 14px 16px; border-radius: var(--r); background: var(--card); border: 1px solid var(--line); min-width: 0; }
+.num { width: 40px; height: 40px; border-radius: 50%; background: var(--pc); color: #fff; display: grid; place-items: center; font-family: var(--font-serif); font-size: 1.05rem; flex: none; }
+.proj .body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.proj .name { font-family: var(--font-serif); font-size: 1.1rem; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.proj .step { color: var(--muted); font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj .go { color: var(--faint); font-size: 1.15rem; }
+.proj.resting { background: transparent; }
+.proj.resting .num { background: transparent; border: 1.5px solid var(--pc); color: var(--pc); }
+.proj.finished .num { background: transparent; border: 1.5px solid var(--pc); color: var(--pc); }
+.c0 { --pc: var(--sage); } .c1 { --pc: var(--coral); } .c2 { --pc: var(--lavender); } .c3 { --pc: var(--mustard); } .c4 { --pc: var(--sky); } .c5 { --pc: var(--rose); } .c6 { --pc: var(--teal); }
+
+.quote { text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; padding: 18px 6px 4px; }
+.quote .mark { font-family: var(--font-serif); font-size: 2.4rem; line-height: .6; color: var(--mustard); }
+.quote p { font-family: var(--font-serif); font-style: italic; font-size: 1.15rem; line-height: 1.45; max-width: 30ch; }
+
+/* Projektansicht */
+.stage { display: flex; flex-direction: column; gap: 16px; min-width: 0; overflow-wrap: anywhere; }
+.where { font-family: var(--font-serif); font-size: 1.08rem; line-height: 1.5; white-space: pre-wrap; padding-left: 16px; border-left: 2px solid var(--line); }
+.welcome { --tint: var(--rose); }
+.welcome .wt { font-family: var(--font-serif); font-size: 1.35rem; line-height: 1.2; }
+.welcome .wt em { color: var(--rose-ink); }
+.stepcard { --tint: var(--sage); }
+
+details.history > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 4px; }
+details.history > summary::-webkit-details-marker { display: none; }
+.timeline { list-style: none; margin: 12px 0 0; padding: 0 0 0 8px; display: flex; flex-direction: column; }
+.timeline li { position: relative; padding: 0 0 18px 24px; border-left: 1.5px dotted var(--line); display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.timeline li .dotm { position: absolute; left: -6px; top: 6px; width: 11px; height: 11px; border-radius: 50%; background: var(--sage); }
+.timeline li .dotm.open { background: var(--card); border: 1.5px solid var(--taupe); }
+.timeline .was { font-family: var(--font-serif); font-size: 1rem; white-space: pre-wrap; }
+.timeline .then { font-size: .9rem; color: var(--muted); }
+
+/* Fokus */
+.focus { min-height: 58vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 18px; min-width: 0; overflow-wrap: anywhere; }
+.focus .huge { font-family: var(--font-serif); font-size: clamp(2.1rem, 9.5vw, 3rem); line-height: 1.1; max-width: 16ch; }
+.ring { width: 64px; height: 64px; border-radius: 50%; background: color-mix(in srgb, var(--mustard) 35%, var(--card)); display: grid; place-items: center; }
+.ring::after { content: ""; width: 22px; height: 22px; border-radius: 50%; background: var(--mustard); }
+@media (prefers-reduced-motion: no-preference) { .ring { animation: breathe 4s ease-in-out infinite; } @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } } }
+
+/* Formulare */
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; display: flex; flex-direction: column; gap: 18px; min-width: 0; overflow-wrap: anywhere; }
+.panel h2 { font-size: 1.35rem; }
+.panel.confirm { border-color: var(--coral); }
+.field { display: flex; flex-direction: column; gap: 7px; }
+label, .flabel { font-weight: 600; font-size: .68rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+input[type=text], textarea { width: 100%; font: inherit; font-size: 1.02rem; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+input[type=text]::placeholder, textarea::placeholder { color: var(--faint); }
+input[aria-invalid="true"] { border-color: var(--coral); }
+textarea { min-height: 100px; resize: vertical; font-family: var(--font-serif); }
+.hint { color: var(--muted); font-size: .84rem; }
+.error { color: var(--terra); font-size: .9rem; }
+.finish-offer { --tint: var(--mustard); }
+.finish-offer .ft { font-family: var(--font-serif); font-size: 1.25rem; }
+button.finish-btn { align-self: flex-start; background: var(--mustard); border-color: var(--mustard); color: #2b2205; font-weight: 600; }
+.done-stage { min-height: 48vh; }
+.settings-list { display: flex; flex-direction: column; gap: 14px; }
+.settings-list .panel { gap: 12px; }
+.howto { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: start; }
+.howto .num { width: 30px; height: 30px; font-size: .9rem; }
+
+input[type=password] { width: 100%; font: inherit; font-size: 1.02rem; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+button.ghostlink { background: none; border: none; padding: 0; min-height: 0; color: var(--accent, var(--terra)); text-decoration: underline; text-underline-offset: 3px; font-weight: 500; }
+.panel .row button.ghostlink { padding: 8px 4px; }
+button.ghostlink.small-link { align-self: flex-start; font-size: .86rem; color: var(--muted); }
+.sync-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--taupe); vertical-align: middle; }
+.sync-dot[data-s="ok"] { background: var(--sage); } .sync-dot[data-s="busy"] { background: var(--mustard); } .sync-dot[data-s="offline"], .sync-dot[data-s="error"] { background: var(--coral); }
+.suggest { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+button.suggest-btn { align-self: flex-start; min-height: 38px; padding: 7px 15px; font-size: .88rem; color: var(--lav-ink); border-color: color-mix(in srgb, var(--lavender) 55%, var(--line)); background: color-mix(in srgb, var(--lavender) 10%, var(--card)); }
+button.suggest-btn[data-busy] { opacity: .7; }
+.sugg-list { display: flex; flex-direction: column; gap: 8px; }
+.sugg-list:empty { display: none; }
+button.sugg { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; border-radius: 14px; padding: 11px 14px; min-height: 0; background: var(--card); }
+button.sugg .sugg-step { font-family: var(--font-serif); font-size: 1.02rem; line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
+button.sugg .sugg-min { flex: none; font-size: .72rem; color: var(--muted); background: var(--sunk); border-radius: 999px; padding: 3px 9px; }
+button.sugg[aria-pressed="true"] { border-color: var(--lavender); background: color-mix(in srgb, var(--lavender) 16%, var(--card)); }
+@media (prefers-reduced-motion: no-preference) { .sugg-wait { animation: pulse 1.2s ease-in-out infinite; } @keyframes pulse { 50% { opacity: .45; } } }
+.timer-pick { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.timer-pick .chips { justify-content: center; }
+.tring { position: relative; width: 168px; height: 168px; display: grid; place-items: center; }
+.tring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.tring circle { fill: none; stroke-width: 6; }
+.tr-bg { stroke: color-mix(in srgb, var(--mustard) 22%, var(--card)); }
+.tr-fg { stroke: var(--mustard); stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.tr-time { font-family: var(--font-serif); font-size: 2.3rem; font-variant-numeric: tabular-nums; }
+.tring.done .tr-time { color: var(--mustard-ink); }
+.week strong { font-weight: 600; color: var(--ink); }
+.confetti { position: fixed; left: 50%; top: 42%; width: 0; height: 0; z-index: 6; pointer-events: none; }
+.confetti span { position: absolute; width: var(--s); height: var(--s); border-radius: 50%; background: var(--c); opacity: 0; animation: burst 1.1s cubic-bezier(.15,.7,.3,1) forwards; }
+@keyframes burst { 0% { transform: translate(-50%, -50%) scale(.4); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 60px)) scale(1); opacity: 0; } }
+[tabindex="-1"]:focus { outline: none; }
+.center { text-align: center; }
+.version { padding-top: 6px; }
+.danger-zone { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+button.danger { background: var(--terra); border-color: var(--terra); color: #fff; font-weight: 600; }
+nav.legal { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 18px; font-size: .85rem; padding-top: 10px; }
+nav.legal a, .hint a { color: var(--muted); text-underline-offset: 3px; }
+.toast { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 36px); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--cta); color: var(--on-cta); padding: 11px 18px; border-radius: 999px; font-size: .9rem; pointer-events: none; text-align: center; }
+@media (prefers-reduced-motion: no-preference) { .app > * { animation: rise .3s ease-out both; } @keyframes rise { from { transform: translateY(6px); } to { transform: none; } } }
+</style>
+</head>
+<body>
+<noscript><p style="padding:16px">Speicherpunkt braucht JavaScript.</p></noscript>
+<div class="blobs" aria-hidden="true"><span class="b1"></span><span class="b2"></span><span class="b3"></span><span class="b4"></span><span class="b5"></span><span class="b6"></span></div>
+<main class="app" id="app" aria-live="polite"></main>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+  // Abgleich zwischen Geräten (Supabase). Der öffentliche Schlüssel darf in der App stehen.
+  window.SP_CONFIG = window.SP_CONFIG || {
+    url: "https://satqwruqmwgcflcggbul.supabase.co",
+    key: "sb_publishable_U214RD6vhA1GlMfMPG04Xw_Z2g_qF3l"
+  };
+</script>
+<script>
+(() => {
+  "use strict";
+  const KEY = "speicherpunkt.v1";
+  const SKEY = "speicherpunkt.session";
+  const CFG = window.SP_CONFIG || {};
+  const SYNC_ON = !!(CFG.url && CFG.key);
+  const DAY = 86400000;
+  const APP_VERSION = "9";
+  const $app = document.getElementById("app");
+  const $toast = document.getElementById("toast");
+
+  // ---------- state ----------
+  let state = { v: 2, projects: [], deleted: {}, updated: 0 };
+  let examples = makeExamples();
+  let view = { name: "home" };
+  let storage = "memory"; // memory | local
+  let confirmFor = null;
+
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+  function now() { return Date.now(); }
+
+  function makeExamples() {
+    const t = now();
+    return [
+      { id: "ex1", example: true, name: "Gartenhaus streichen", created: t - 30 * DAY, paused: false, remindAt: t - 1000,
+        saves: [
+          { id: "e1a", at: t - 20 * DAY, where: "Farbe gekauft, Pinsel liegen in der Garage.", next: "Abdeckplane auslegen", done: true },
+          { id: "e1b", at: t - 12 * DAY, where: "Die Südwand ist fertig grundiert. Bei der Tür fehlt noch Klebeband.", next: "Klebeband um den Türrahmen kleben" } ] },
+      { id: "ex2", example: true, name: "Bewerbungsunterlagen", created: t - 9 * DAY, paused: false, remindAt: null,
+        saves: [ { id: "e2a", at: t - 2 * DAY, where: "Lebenslauf aktualisiert bis 2024. Letzte Stelle fehlt noch.", next: "Letzte Stelle mit drei Stichworten eintragen" } ] },
+      { id: "ex3", example: true, name: "Gitarre üben", created: t - 90 * DAY, paused: true, remindAt: null,
+        saves: [ { id: "e3a", at: t - 47 * DAY, where: "Barré-Griff F klappt fast, Saite H schnarrt noch.", next: "Gitarre stimmen und F fünfmal greifen" } ] }
+    ];
+  }
+
+  function projects() { return state.projects.length ? state.projects : examples; }
+  function showingExamples() { return state.projects.length === 0; }
+  function find(id) { return projects().find(p => p.id === id); }
+  function current(p) { return p.saves[p.saves.length - 1]; }
+  function lastTouched(p) { const c = current(p); return c ? c.at : p.created; }
+  function isDue(p) { return !p.paused && !p.finished && p.remindAt && p.remindAt <= now(); }
+  const fmtDay = new Intl.DateTimeFormat("de-CH", { day: "numeric", month: "long", year: "numeric" });
+
+  // ---------- persistence ----------
+  function readLocal() {
+    try { const raw = localStorage.getItem(KEY); if (!raw) return null; const s = JSON.parse(raw); return valid(s) ? s : null; } catch { return null; }
+  }
+  function writeLocal() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); if (storage === "memory") storage = "local"; return true; } catch { return false; }
+  }
+  function valid(s) { return s && typeof s === "object" && Array.isArray(s.projects); }
+  function num(v) { return typeof v === "number" && isFinite(v) ? v : null; }
+  // Prüft jedes Projekt, damit kaputte Sicherungen oder alte Datenstände die App nicht zum Absturz bringen.
+  function cleanProject(p) {
+    if (!p || typeof p !== "object" || typeof p.id !== "string" || !p.id) return null;
+    const saves = (Array.isArray(p.saves) ? p.saves : [])
+      .filter(sv => sv && typeof sv === "object" && typeof sv.next === "string")
+      .map(sv => ({ ...sv, id: typeof sv.id === "string" && sv.id ? sv.id : uid(), at: (num(sv.at) > 946684800000 ? sv.at : null) || (num(p.created) > 946684800000 ? p.created : null) || now(), where: typeof sv.where === "string" ? sv.where : "" }));
+    return { ...p, id: p.id.slice(0, 64), name: typeof p.name === "string" && p.name.trim() ? p.name.slice(0, 80) : "Ohne Namen",
+      created: (num(p.created) > 946684800000 ? p.created : null) || (saves[0] && saves[0].at) || now(), paused: !!p.paused, finished: num(p.finished), remindAt: num(p.remindAt), saves };
+  }
+  function normalize(s) {
+    s.v = 2;
+    if (!s.deleted || typeof s.deleted !== "object" || Array.isArray(s.deleted)) s.deleted = {};
+    const seen = new Set();
+    s.projects = (Array.isArray(s.projects) ? s.projects : []).map(cleanProject).filter(p => p && !seen.has(p.id) && seen.add(p.id));
+    return s;
+  }
+
+  // Jede Änderung an einem Projekt bekommt einen Zeitstempel (mod). So lassen sich Geräte projektweise zusammenführen.
+  let fp = {};
+  function fingerprint(p) { const { mod, ...rest } = p; return JSON.stringify(rest); }
+  function resetFingerprints() { fp = {}; for (const p of state.projects) fp[p.id] = fingerprint(p); }
+  function stampMods() {
+    for (const p of state.projects) { const f = fingerprint(p); if (fp[p.id] !== f) { p.mod = now(); fp[p.id] = f; } }
+  }
+  const PKEY = "speicherpunkt.pending";
+  let changeSeq = 0;
+  function setPending(on) { try { if (on) localStorage.setItem(PKEY, "1"); else localStorage.removeItem(PKEY); } catch {} }
+  function hasPending() { try { return localStorage.getItem(PKEY) === "1"; } catch { return false; } }
+  function persist() {
+    stampMods();
+    state.updated = now();
+    changeSeq++;
+    writeLocal();
+    if (session) setPending(true);
+    scheduleSync();
+  }
+  function tombstone(id) { state.deleted[id] = now(); delete fp[id]; }
+
+  // Vergleich unabhängig von der Reihenfolge der Felder. Die Datenbank (jsonb) sortiert Felder um;
+  // ohne diesen Vergleich würde die App bei jedem Abgleich unnötig schreiben.
+  function canon(v) { return JSON.stringify(v, (k, x) => x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, key) => { o[key] = x[key]; return o; }, {}) : x); }
+  function merge(a, b) {
+    const out = { v: 2, projects: [], deleted: {}, updated: Math.max(a.updated || 0, b.updated || 0) };
+    for (const src of [a.deleted || {}, b.deleted || {}]) for (const [id, t] of Object.entries(src)) out.deleted[id] = Math.max(out.deleted[id] || 0, t);
+    const byId = new Map();
+    for (const p of [...(a.projects || []), ...(b.projects || [])]) {
+      const prev = byId.get(p.id);
+      if (!prev || (p.mod || 0) > (prev.mod || 0)) byId.set(p.id, p);
+    }
+    const order = [...(a.projects || []).map(p => p.id), ...(b.projects || []).map(p => p.id)];
+    const seen = new Set();
+    for (const id of order) {
+      if (seen.has(id)) continue; seen.add(id);
+      const p = byId.get(id);
+      if (out.deleted[id] && out.deleted[id] >= (p.mod || 0)) continue;
+      out.projects.push(JSON.parse(JSON.stringify(p)));
+    }
+    const cutoff = now() - 120 * DAY;
+    for (const [id, t] of Object.entries(out.deleted)) if (t < cutoff) delete out.deleted[id];
+    return out;
+  }
+
+  // ---------- Konto und Abgleich ----------
+  let session = null;
+  let sync = { state: SYNC_ON ? "out" : "off", at: 0, msg: "" }; // off | out | busy | ok | offline | error
+  function readSession() { try { const r = localStorage.getItem(SKEY); return r ? JSON.parse(r) : null; } catch { return null; } }
+  function writeSession() { try { if (session) localStorage.setItem(SKEY, JSON.stringify(session)); else localStorage.removeItem(SKEY); } catch {} }
+  function keepSession(d) {
+    if (!d || !d.access_token) return false;
+    session = { access_token: d.access_token, refresh_token: d.refresh_token, expires_at: now() + (d.expires_in || 3600) * 1000,
+      user: { id: d.user && d.user.id, email: d.user && d.user.email } };
+    writeSession(); return true;
+  }
+  async function call(path, opts = {}) {
+    const headers = { apikey: CFG.key, "Content-Type": "application/json", ...(opts.headers || {}) };
+    if (opts.auth) { await freshToken(); if (!session) { const e = new Error("signed_out"); e.code = "signed_out"; throw e; } headers.Authorization = "Bearer " + session.access_token; }
+    let r;
+    try { r = await fetch(CFG.url.replace(/\/+$/, "") + path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined }); }
+    catch { const e = new Error("offline"); e.code = "offline"; throw e; }
+    let data = null; const txt = await r.text(); try { data = txt ? JSON.parse(txt) : null; } catch {}
+    if (r.status === 401 && opts.auth && !opts.retried && session) { session.expires_at = 0; await freshToken(); return call(path, { ...opts, retried: true }); }
+    if (!r.ok) { const e = new Error((data && (data.msg || data.message || data.error_description || data.error)) || ("HTTP " + r.status)); e.status = r.status; e.data = data; e.code = (data && (data.error_code || data.code)) || ""; throw e; }
+    return data;
+  }
+  let refreshing = null;
+  async function freshToken() {
+    if (!session || session.expires_at - 60000 > now()) return;
+    // Hat ein anderer Tab die Anmeldung schon erneuert? Dann diese übernehmen.
+    const stored = readSession();
+    if (stored && stored.refresh_token !== session.refresh_token && stored.expires_at - 60000 > now()) { session = stored; return; }
+    if (!refreshing) refreshing = (async () => {
+      const used = session.refresh_token;
+      try { const d = await call("/auth/v1/token?grant_type=refresh_token", { method: "POST", body: { refresh_token: used } }); keepSession(d); }
+      catch (e) {
+        if (e.code === "offline") throw e;
+        const again = readSession();
+        if (again && again.refresh_token !== used) session = again;
+        else { session = null; writeSession(); sync = { state: "out", at: 0, msg: "Bitte melde dich neu an." }; }
+      }
+      finally { refreshing = null; }
+    })();
+    return refreshing;
+  }
+  function authError(e) {
+    const m = String(e && e.message || "").toLowerCase();
+    if (e && e.code === "offline") return "Keine Verbindung. Prüf dein Internet und versuch es nochmals.";
+    if (m.includes("invalid login") || m.includes("invalid_credentials") || e.code === "invalid_credentials") return "E-Mail oder Passwort stimmt nicht.";
+    if (m.includes("already registered") || m.includes("already exists") || e.code === "user_already_exists") return "Mit dieser E-Mail gibt es schon ein Konto. Melde dich stattdessen an.";
+    if (m.includes("not confirmed") || e.code === "email_not_confirmed") return "Bitte bestätige zuerst deine E-Mail-Adresse über den Link im Postfach.";
+    if (e.code === "weak_password" || (m.includes("password") && (m.includes("6") || m.includes("weak") || m.includes("short")))) return "Das Passwort ist zu schwach. Nimm mindestens 6 Zeichen, am besten mehr.";
+    if (e.code === "same_password") return "Das neue Passwort muss sich vom alten unterscheiden.";
+    if (e.code === "email_address_invalid" || (m.includes("email") && m.includes("invalid"))) return "Diese E-Mail-Adresse sieht nicht gültig aus.";
+    if (e.code === "signup_disabled" || m.includes("signups not allowed")) return "Neue Konten sind gerade nicht möglich.";
+    if (m.includes("not authorized") || e.code === "email_address_not_authorized") return "An diese Adresse kann die App noch keine E-Mails schicken. Das Zurücksetzen per E-Mail ist noch nicht ganz eingerichtet.";
+    if (e.code === "over_email_send_rate_limit") return "Es wurden gerade zu viele E-Mails verschickt. Versuch es in einer Stunde nochmals.";
+    if (e && e.status === 429) return "Zu viele Versuche. Warte ein paar Minuten.";
+    return "Das hat nicht geklappt (" + (e && e.message || "unbekannt") + ").";
+  }
+  async function signIn(email, password, create) {
+    if (create) {
+      const d = await call("/auth/v1/signup", { method: "POST", body: { email, password } });
+      if (!keepSession(d)) return "confirm";
+    } else {
+      keepSession(await call("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password } }));
+    }
+    await syncNow(true);
+    return "ok";
+  }
+  function appUrl() { return location.origin + location.pathname; }
+  async function requestReset(email) {
+    await call("/auth/v1/recover?redirect_to=" + encodeURIComponent(appUrl()), { method: "POST", body: { email } });
+  }
+  async function setNewPassword(password) {
+    await call("/auth/v1/user", { method: "PUT", auth: true, body: { password } });
+  }
+  // Links aus E-Mails (Passwort zurücksetzen, Adresse bestätigen) bringen die Anmeldung im #-Teil der Adresse mit.
+  function readAuthLink() {
+    const h = location.hash.slice(1);
+    if (!h || !/(access_token|error)=/.test(h)) return null;
+    const q = new URLSearchParams(h);
+    if (q.get("error") || q.get("error_description")) return { error: q.get("error_code") || q.get("error"), text: q.get("error_description") || "" };
+    if (!q.get("access_token") || !q.get("refresh_token")) return null;
+    return { access_token: q.get("access_token"), refresh_token: q.get("refresh_token"), expires_in: Number(q.get("expires_in")) || 3600, type: q.get("type") || "" };
+  }
+  async function handleAuthLink(link) {
+    try { history.replaceState(null, "", location.pathname + location.search); } catch {}
+    if (link.error) {
+      view = { name: "settings", authMode: "reset",
+        authErr: /expired|invalid/i.test(link.error + " " + link.text) ? "Der Link ist abgelaufen oder wurde schon benutzt. Fordere unten einen neuen an." : "Der Link hat nicht funktioniert. Fordere unten einen neuen an." };
+      render(); return;
+    }
+    try {
+      const u = await fetch(CFG.url.replace(/\/+$/, "") + "/auth/v1/user", { headers: { apikey: CFG.key, Authorization: "Bearer " + link.access_token } }).then(r => r.ok ? r.json() : null);
+      if (!u || !u.id) throw new Error("user");
+      // War auf diesem Gerät eine andere Person angemeldet, deren Projekte nicht ins neue Konto mitnehmen.
+      if (session && session.user && session.user.id && session.user.id !== u.id) {
+        state = { v: 2, projects: [], deleted: {}, updated: 0 }; resetFingerprints(); writeLocal(); setPending(false); examples = makeExamples();
+      }
+      keepSession({ ...link, user: { id: u.id, email: u.email } });
+    } catch {
+      view = { name: "settings", authMode: "login", authErr: "Die Anmeldung über den Link hat nicht geklappt. Melde dich mit E-Mail und Passwort an." };
+      render(); return;
+    }
+    if (link.type === "recovery") { view = { name: "settings", authMode: "newpass" }; render(); }
+    else { view = { name: "home" }; render(); toast("Angemeldet."); }
+    syncNow();
+  }
+
+  async function deleteAccount() {
+    await call("/rest/v1/rpc/sp_delete_account", { method: "POST", auth: true, body: {} });
+    session = null; writeSession(); setPending(false);
+    state = { v: 2, projects: [], deleted: {}, updated: 0 }; resetFingerprints(); writeLocal();
+    examples = makeExamples();
+    sync = { state: "out", at: 0, msg: "" };
+  }
+
+  async function signOut(force) {
+    try { await syncNow(true); } catch {}
+    if (!force && hasPending()) return "unsynced";
+    try { if (session) await call("/auth/v1/logout", { method: "POST", auth: true }); } catch {}
+    setPending(false);
+    session = null; writeSession();
+    state = { v: 2, projects: [], deleted: {}, updated: 0 }; resetFingerprints(); writeLocal();
+    examples = makeExamples();
+    sync = { state: "out", at: 0, msg: "" };
+    return "ok";
+  }
+  let syncTimer = null, syncing = null, syncAgain = false;
+  // Mit Revisionszähler (rev, ab supabase-setup.sql Version 8) wird nur geschrieben, wenn seit dem Lesen niemand
+  // anderes geschrieben hat, etwa ein zweites Gerät. Sonst neu lesen und nochmals zusammenführen.
+  // Fehlt die Spalte noch in der Datenbank, schreibt die App wie bisher (ohne diese Prüfung).
+  let useRev = true;
+  async function readRemote() {
+    if (useRev) {
+      try { return await call("/rest/v1/sp_state?select=data,updated_at,rev", { auth: true }); }
+      catch (e) { if (e.code !== "42703" && !(e.status === 400 && /rev/.test(e.message))) throw e; useRev = false; }
+    }
+    return call("/rest/v1/sp_state?select=data,updated_at", { auth: true });
+  }
+  // true: geschrieben. false: jemand war schneller, nochmals lesen.
+  async function writeRemote(rows, merged) {
+    const body = { user_id: session.user.id, data: merged, updated_at: now() };
+    if (!useRev) {
+      await call("/rest/v1/sp_state?on_conflict=user_id", { method: "POST", auth: true, headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body });
+      return true;
+    }
+    if (rows.length) {
+      const res = await call("/rest/v1/sp_state?user_id=eq." + encodeURIComponent(session.user.id) + "&rev=eq." + Number(rows[0].rev || 0) + "&select=rev",
+        { method: "PATCH", auth: true, headers: { Prefer: "return=representation" }, body: { data: merged, updated_at: body.updated_at } });
+      return Array.isArray(res) && res.length > 0;
+    }
+    try { await call("/rest/v1/sp_state", { method: "POST", auth: true, headers: { Prefer: "return=minimal" }, body }); return true; }
+    catch (e) { if (e.status === 409 || e.code === "23505") return false; throw e; }
+  }
+  function scheduleSync() { if (!session) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 1200); }
+  async function syncNow(force) {
+    if (!SYNC_ON || !session) return;
+    if (syncing) { syncAgain = true; return syncing; }
+    const seqAtStart = changeSeq;
+    syncing = (async () => {
+      sync.state = "busy"; paintSync();
+      try {
+        const before = canon(state.projects);
+        for (let attempt = 0; ; attempt++) {
+          const rows = await readRemote();
+          const remote = rows && rows[0] && valid(rows[0].data) ? normalize(rows[0].data) : { v: 2, projects: [], deleted: {}, updated: 0 };
+          const merged = merge(state, remote);
+          merged.projects = merged.projects.map(cleanProject).filter(Boolean);   // gleiche Form wie remote, sonst sähe es nach Änderung aus
+          state = merged; resetFingerprints(); writeLocal();
+          if (canon(remote.projects) === canon(merged.projects) && canon(remote.deleted || {}) === canon(merged.deleted) && rows.length) break;
+          if (await writeRemote(rows, merged)) break;
+          if (attempt >= 4) throw new Error("Gleichzeitige Änderungen, gleich nochmals");
+        }
+        sync = { state: "ok", at: now(), msg: "" };
+        if (changeSeq === seqAtStart) setPending(false);
+        if (before !== canon(state.projects)) softRender();
+      } catch (e) {
+        if (e.code === "offline") sync = { state: "offline", at: sync.at, msg: "" };
+        else if (e.code === "signed_out" || e.status === 401) { session = null; writeSession(); sync = { state: "out", at: 0, msg: "Bitte melde dich neu an." }; }
+        else sync = { state: "error", at: sync.at, msg: e.message || "Fehler" };
+      }
+      paintSync();
+    })();
+    try { await syncing; } finally { syncing = null; if (syncAgain) { syncAgain = false; syncNow(); } }
+  }
+  // ---------- Vorschläge für Mini-Schritte ----------
+  function fallbackIdeas(ctx) {
+    const n = ctx.project ? "«" + ctx.project + "»" : "das Projekt";
+    const st = ctx.step ? "«" + ctx.step + "»" : "den Schritt";
+    if (ctx.mode === "smaller") return [
+      { step: "Nur das Material für " + st + " bereitlegen", minutes: 2 },
+      { step: "Den allerersten Handgriff von " + st + " aufschreiben", minutes: 2 },
+      { step: "Timer auf 5 Minuten stellen und nur anfangen", minutes: 5 } ];
+    if (ctx.mode === "new") return [
+      { step: "Alles Nötige für " + n + " an einen Ort legen", minutes: 5 },
+      { step: "Drei Stichworte notieren, was zu tun ist", minutes: 2 },
+      { step: "Timer auf 10 Minuten stellen und loslegen", minutes: 10 } ];
+    return [
+      { step: "Kurz notieren, was als Nächstes fehlt", minutes: 2 },
+      { step: "Das Nächste für " + n + " nur öffnen oder bereitlegen", minutes: 2 },
+      { step: "Timer auf 10 Minuten stellen, dann darf ich aufhören", minutes: 10 } ];
+  }
+  function suggestContext(mode) {
+    const p = view.id ? find(view.id) : null;
+    const nameEl = $app.querySelector("#f-name"), whereEl = $app.querySelector("#f-where"), stepEl = $app.querySelector("#f-step") || $app.querySelector("#f-next");
+    return {
+      mode,
+      project: p ? p.name : (nameEl ? nameEl.value.trim() : ""),
+      where: whereEl ? whereEl.value.trim() : "",
+      step: stepEl ? stepEl.value.trim() : "",
+      history: p ? p.saves.slice(-6).map(sv => ({ where: sv.where || "", next: sv.next, done: !!sv.done })) : []
+    };
+  }
+  async function fetchSuggestions(ctx) {
+    if (!SYNC_ON || !session) return { ideas: fallbackIdeas(ctx), note: "Allgemeine Ideen. Mit Konto schlägt dir die App Schritte vor, die zu deinem Projekt passen." };
+    try {
+      const d = await call("/functions/v1/suggest-step", { method: "POST", auth: true, body: ctx });
+      if (d && Array.isArray(d.suggestions) && d.suggestions.length) return { ideas: d.suggestions, ai: true };
+      return { ideas: fallbackIdeas(ctx), note: "Gerade keine passenden Vorschläge. Hier allgemeine Ideen." };
+    } catch (e) {
+      if (e.code === "offline") return { ideas: fallbackIdeas(ctx), note: "Offline. Hier allgemeine Ideen." };
+      if (e.status === 429) return { ideas: fallbackIdeas(ctx), note: "Für heute sind die Vorschläge aufgebraucht. Morgen geht es wieder. Hier allgemeine Ideen." };
+      if (e.status === 404) return { ideas: fallbackIdeas(ctx), note: "Die Vorschläge sind noch nicht eingerichtet. Hier allgemeine Ideen." };
+      return { ideas: fallbackIdeas(ctx), note: "Vorschläge gerade nicht erreichbar. Hier allgemeine Ideen." };
+    }
+  }
+  let suggestSeq = 0;
+  async function runSuggest(btn) {
+    const box = btn.closest(".suggest"), list = box.querySelector(".sugg-list");
+    const ctx = suggestContext(btn.dataset.mode);
+    const seq = ++suggestSeq;
+    btn.disabled = true; btn.dataset.busy = "1";
+    list.innerHTML = `<p class="hint sugg-wait">Denke nach …</p>`;
+    const res = await fetchSuggestions(ctx);
+    if (seq !== suggestSeq || !document.body.contains(list)) return;
+    btn.disabled = false; delete btn.dataset.busy;
+    btn.innerHTML = `<span aria-hidden="true">↻</span> Andere Vorschläge`;
+    list.innerHTML = res.ideas.map(x => `<button type="button" class="sugg" data-action="pick-sugg" data-text="${esc(x.step)}"><span class="sugg-step">${esc(x.step)}</span>${x.minutes ? `<span class="sugg-min">${x.minutes} Min.</span>` : ""}</button>`).join("")
+      + (res.note ? `<p class="hint sugg-note">${esc(res.note)}</p>` : "");
+  }
+  function syncLabel() {
+    if (!SYNC_ON) return "Abgleich wird noch eingerichtet.";
+    switch (sync.state) {
+      case "busy": return "Wird abgeglichen …";
+      case "ok": return "Abgeglichen " + ago(sync.at) + ".";
+      case "offline": return "Offline. Änderungen werden abgeglichen, sobald du wieder Internet hast.";
+      case "error": return "Abgleich fehlgeschlagen: " + sync.msg;
+      default: return sync.msg || "Nicht angemeldet.";
+    }
+  }
+  function paintSync() { const el = document.getElementById("sync-status"); if (el) el.textContent = syncLabel(); const d = document.getElementById("sync-dot"); if (d) d.dataset.s = sync.state; }
+  // Neu zeichnen nach einem Abgleich, aber nie mitten in einer Eingabe.
+  function softRender() {
+    const ae = document.activeElement;
+    const typing = !!(ae && $app.contains(ae) && ae.matches("input, textarea"));
+    const calm = view.name === "home" || (view.name === "project" && !view.edit && !view.menu);
+    if (calm && !typing) { if (view.id && !find(view.id)) view = { name: "home" }; render(); }
+  }
+
+  // ---------- helpers ----------
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function ago(ts) {
+    const d = now() - ts;
+    const min = Math.round(d / 60000);
+    if (min < 1) return "gerade eben";
+    if (min < 60) return "vor " + min + (min === 1 ? " Minute" : " Minuten");
+    const h = Math.round(min / 60);
+    const days = Math.floor((startOfDay(now()) - startOfDay(ts)) / DAY);
+    if (days === 0) return "heute";
+    if (days === 1) return "gestern";
+    if (days < 14) return "vor " + days + " Tagen";
+    const w = Math.round(days / 7);
+    if (days < 60) return "vor " + w + " Wochen";
+    const m = Math.round(days / 30);
+    if (days < 365) return "vor " + m + " Monaten";
+    const y = Math.round(days / 365);
+    return "vor " + y + (y === 1 ? " Jahr" : " Jahren");
+  }
+  function startOfDay(ts) { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  const fmtDate = new Intl.DateTimeFormat("de-CH", { weekday: "short", day: "numeric", month: "short" });
+  const fmtTime = new Intl.DateTimeFormat("de-CH", { hour: "2-digit", minute: "2-digit" });
+  function stamp(ts) { return fmtDate.format(ts) + " · " + fmtTime.format(ts); }
+  function remindLabel(ts) {
+    const days = Math.round((startOfDay(ts) - startOfDay(now())) / DAY);
+    if (days <= 0) return "heute";
+    if (days === 1) return "morgen";
+    return "am " + fmtDate.format(ts);
+  }
+  function toast(msg) {
+    $toast.textContent = msg; $toast.hidden = false;
+    clearTimeout(toast.t); toast.t = setTimeout(() => { $toast.hidden = true; }, 3200);
+  }
+  function suggestion() {
+    const act = projects().filter(p => !p.paused && !p.finished);
+    if (!act.length) return null;
+    const due = act.filter(isDue).sort((a, b) => a.remindAt - b.remindAt);
+    if (due.length) return due[0];
+    return act.slice().sort((a, b) => lastTouched(b) - lastTouched(a))[0];
+  }
+  const REMIND = [
+    { k: "none", label: "Nicht erinnern" },
+    { k: "1", label: "Morgen" },
+    { k: "3", label: "In 3 Tagen" },
+    { k: "7", label: "In einer Woche" }
+  ];
+  function remindFrom(k) {
+    if (k === "none" || !k) return null;
+    const d = startOfDay(now()) + Number(k) * DAY + 8 * 3600000;
+    return d;
+  }
+
+  // ---------- views ----------
+  // Nach einem Seitenwechsel: nach oben scrollen und die Überschrift fokussieren (für Screenreader und Tastatur).
+  function afterNav() {
+    window.scrollTo(0, 0);
+    if ($app.querySelector("[data-autofocus]")) return;
+    const hd = $app.querySelector("h1, h2");
+    if (hd) { hd.setAttribute("tabindex", "-1"); try { hd.focus({ preventScroll: true }); } catch {} }
+  }
+  function render() {
+    if (view.name !== "focus") { if (timerTick || wakeLock) stopTimer(); if (document.title !== docTitle) document.title = docTitle; }
+    const fn = VIEWS[view.name] || VIEWS.home;
+    $app.innerHTML = fn();
+    const p = view.id ? find(view.id) : null;
+    document.body.dataset.view = view.name === "project" && p && p.finished ? "finished" : (VIEWS[view.name] ? view.name : "home");
+    const f = $app.querySelector("[data-autofocus]");
+    if (f) f.focus({ preventScroll: false });
+  }
+
+  const ARROW = `<span class="arrow" aria-hidden="true">→</span>`;
+  const BACK = label => `<span aria-hidden="true">←</span> ${label}`;
+  const WAVE = `<svg class="wave" viewBox="0 0 92 22" aria-hidden="true"><path d="M2 15c11-14 22-14 30 0s21 14 30 0 20-14 28 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  function colorOf(p) { let h = 0; for (const ch of String(p.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return "c" + (h % 7); }
+  function initial(p) { const m = String(p.name).trim().match(/[\p{L}\p{N}]/u); return m ? m[0].toUpperCase() : "·"; }
+  // ---------- Fokus-Timer ----------
+  let wakeLock = null, audio = null, timerTick = null, docTitle = document.title;
+  function mmss(ms) { const s = Math.max(0, Math.ceil(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+  function timerRing(t) {
+    const left = Math.max(0, t.end - now()), frac = 1 - left / t.total, C = 2 * Math.PI * 44;
+    return `<div class="tring${left === 0 ? " done" : ""}" role="timer" aria-label="Verbleibende Zeit">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="tr-bg" cx="50" cy="50" r="44"/><circle class="tr-fg" id="tr-fg" cx="50" cy="50" r="44" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - frac)).toFixed(1)}"/></svg>
+      <span class="tr-time" id="tr-time">${left === 0 ? "✓" : mmss(left)}</span></div>`;
+  }
+  async function lockScreen() { try { if (navigator.wakeLock && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } } catch { wakeLock = null; } }
+  function unlockScreen() { try { if (wakeLock) wakeLock.release(); } catch {} wakeLock = null; }
+  function chime() {
+    try {
+      if (!audio) return;
+      if (audio.state === "suspended") audio.resume();
+      [0, 0.28, 0.56].forEach((d, i) => {
+        const o = audio.createOscillator(), g = audio.createGain(), at = audio.currentTime + d;
+        o.type = "sine"; o.frequency.value = [659.25, 783.99, 1046.5][i];
+        g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.18, at + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.9);
+        o.connect(g).connect(audio.destination); o.start(at); o.stop(at + 1);
+      });
+    } catch {}
+    try { if (navigator.vibrate) navigator.vibrate([180, 90, 180]); } catch {}
+  }
+  function startTimer(min) {
+    try { const AC = window.AudioContext || window.webkitAudioContext; if (AC && !audio) audio = new AC(); if (audio && audio.state === "suspended") audio.resume(); } catch {}
+    view.timer = { end: now() + min * 60000, total: min * 60000, rang: false };
+    lockScreen(); render(); tickTimer();
+    clearInterval(timerTick); timerTick = setInterval(tickTimer, 1000);
+  }
+  function stopTimer() { clearInterval(timerTick); timerTick = null; unlockScreen(); document.title = docTitle; if (view.timer) delete view.timer; }
+  function tickTimer() {
+    const t = view.timer;
+    if (view.name !== "focus" || !t) { stopTimer(); return; }
+    const left = t.end - now();
+    const el = document.getElementById("tr-time"), fg = document.getElementById("tr-fg");
+    if (el) el.textContent = left <= 0 ? "✓" : mmss(left);
+    if (fg) { const C = 2 * Math.PI * 44; fg.setAttribute("stroke-dashoffset", (C * Math.max(0, left) / t.total).toFixed(1)); }
+    document.title = left > 0 ? mmss(left) + " · Speicherpunkt" : "Zeit ist um · Speicherpunkt";
+    if (left <= 0 && !t.rang) {
+      t.rang = true; clearInterval(timerTick); timerTick = null; unlockScreen(); chime(); render();
+    }
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && view.timer && view.timer.end > now()) { lockScreen(); tickTimer(); } else if (document.visibilityState === "visible" && view.timer) tickTimer(); });
+
+  // ---------- kleine Belohnung ----------
+  function celebrate(big) {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const layer = document.createElement("div"); layer.className = "confetti"; layer.setAttribute("aria-hidden", "true");
+    const colors = ["--mustard", "--coral", "--lavender", "--sage", "--sky", "--rose"];
+    const n = big ? 34 : 18;
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement("span"), a = (i / n) * Math.PI * 2 + Math.random() * 0.4, r = (big ? 150 : 110) + Math.random() * 70;
+      d.style.setProperty("--dx", (Math.cos(a) * r).toFixed(0) + "px"); d.style.setProperty("--dy", (Math.sin(a) * r - 40).toFixed(0) + "px");
+      d.style.setProperty("--c", "var(" + colors[i % colors.length] + ")"); d.style.setProperty("--s", (8 + Math.random() * 12).toFixed(0) + "px");
+      d.style.animationDelay = (Math.random() * 80).toFixed(0) + "ms";
+      layer.appendChild(d);
+    }
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 1300);
+  }
+  // Wie viele Mini-Schritte in den letzten 7 Tagen erledigt wurden (ohne Serien, ohne Druck).
+  function weekDone() {
+    const since = now() - 7 * DAY; let steps = 0, finished = 0;
+    for (const p of state.projects) {
+      p.saves.forEach((sv, i) => {
+        if (!sv.done || sv.final) return;
+        const when = sv.doneAt || (p.saves[i + 1] && p.saves[i + 1].at) || p.finished || sv.at;
+        if (when >= since) steps++;
+      });
+      if (p.finished && p.finished >= since) finished++;
+    }
+    return { steps, finished };
+  }
+
+  // ---------- Erinnerung im Kalender (.ics) ----------
+  function icsText(v) { return String(v || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
+  function icsDate(ts) { return new Date(ts).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""); }
+  function icsFold(line) {
+    const bytes = new TextEncoder().encode(line); if (bytes.length <= 75) return line;
+    const out = []; let cur = "", len = 0;
+    for (const ch of line) { const l = new TextEncoder().encode(ch).length; if (len + l > (out.length ? 74 : 75)) { out.push(cur); cur = ""; len = 0; } cur += ch; len += l; }
+    out.push(cur); return out.join("\r\n ");
+  }
+  function buildIcs(o) {
+    const url = appUrl();
+    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Speicherpunkt//DE", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT",
+      "UID:" + icsText(o.id) + "-" + o.at + "@speicherpunkt", "DTSTAMP:" + icsDate(now()), "DTSTART:" + icsDate(o.at), "DTEND:" + icsDate(o.at + 15 * 60000),
+      "SUMMARY:" + icsText(o.next + " (" + o.name + ")"),
+      "DESCRIPTION:" + icsText("Projekt: " + o.name + (o.where ? "\nHier warst du: " + o.where : "") + "\nNächster Mini-Schritt: " + o.next + "\n\nWeiter in Speicherpunkt: " + url),
+      "URL:" + url, "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + icsText(o.next), "TRIGGER:PT0M", "END:VALARM", "END:VEVENT", "END:VCALENDAR"];
+    return lines.map(icsFold).join("\r\n") + "\r\n";
+  }
+  function downloadIcs(o) {
+    const blob = new Blob([buildIcs(o)], { type: "text/calendar;charset=utf-8" });
+    const href = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = href; a.download = "speicherpunkt-" + (o.name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "erinnerung") + ".ics";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 10000);
+    toast("Kalendereintrag erstellt. Öffne die Datei, um ihn hinzuzufügen.");
+  }
+
+  function mins(since) { const m = Math.max(0, Math.floor((now() - since) / 60000)); return m < 1 ? "Gerade angefangen" : "Seit " + m + (m === 1 ? " Minute" : " Minuten") + " dabei"; }
+
+  const VIEWS = {
+    home() {
+      const list = projects();
+      const s = suggestion();
+      const due = list.filter(isDue).filter(p => p !== s);
+      const active = list.filter(p => !p.paused && !p.finished && p !== s).sort((a, b) => lastTouched(b) - lastTouched(a));
+      const resting = list.filter(p => p.paused && !p.finished).sort((a, b) => lastTouched(b) - lastTouched(a));
+      const finished = list.filter(p => p.finished).sort((a, b) => b.finished - a.finished);
+      let h = `<header class="top"><span class="eyebrow">Speicherpunkt</span><button class="pill" data-action="settings">Einstellungen</button></header>
+      <section class="intro">${WAVE}<h1 class="title" tabindex="-1">Ein Schritt <em>nach dem</em> anderen.</h1>
+        ${showingExamples() ? `<p class="sub">Setz einen Speicherpunkt, bevor du aufhörst. Wenn du zurückkommst, wartet genau ein nächster Schritt auf dich.</p>` : weekLine()}</section>`;
+      if (showingExamples()) h += `<p class="banner" id="examples-note"><span class="tag">Beispiel</span><span>So sieht es aus, wenn du ein paar Projekte hast. Sobald du dein erstes eigenes anlegst, verschwinden die Beispiele.</span></p>`;
+      if (s) {
+        const c = current(s);
+        h += `<section class="card hero" aria-labelledby="sug-h">
+          <h2 id="sug-h" class="eyebrow" style="--dot: var(${isDue(s) ? "--mustard" : "--coral"})">${isDue(s) ? "Sanfte Erinnerung" : "Hier könntest du weitermachen"}</h2>
+          <div><p class="proj-name">${esc(s.name)}</p><p class="small">Gespeichert ${esc(ago(lastTouched(s)))} · Speicherpunkt ${s.saves.length}</p></div>
+          <p class="big-step">${esc(c ? c.next : "Ersten Schritt festlegen")}</p>
+          <div class="row"><button class="primary" data-action="open" data-id="${esc(s.id)}">Weitermachen ${ARROW}</button>
+          ${isDue(s) ? `<button data-action="snooze" data-id="${esc(s.id)}">Morgen wieder</button>` : ""}</div>
+        </section>`;
+      } else if (list.length && finished.length === list.length) {
+        h += `<section class="card hero"><h2 class="eyebrow" style="--dot: var(--mustard)">Alles abgeschlossen</h2><p class="big-step">Starke Leistung. Leg ein neues Projekt an, wenn dir <em>danach</em> ist.</p></section>`;
+      } else if (!list.length) {
+        h += `<section class="card hero"><h2 class="eyebrow">Noch leer</h2><p class="big-step">Leg ein Projekt an und setz deinen <em>ersten</em> Speicherpunkt.</p></section>`;
+      } else {
+        h += `<section class="card hero"><h2 class="eyebrow" style="--dot: var(--rose)">Alles ruht gerade</h2><p class="big-step">Das ist in Ordnung. Wenn du so weit bist, weck ein Projekt <em>auf.</em></p></section>`;
+      }
+      h += `<button class="add" data-action="new">+ Neues Projekt</button>`;
+      if (SYNC_ON && !session && state.projects.length) h += `<p class="banner" id="login-hint"><span class="tag">Tipp</span><span>Auch auf dem PC oder einem zweiten Handy? <button class="ghostlink" data-action="settings">Melde dich an</button>, dann erscheinen deine Projekte überall.</span></p>`;
+      const others = due.concat(active.filter(p => !due.includes(p)));
+      if (others.length) h += `<section class="group" aria-labelledby="all-h"><h2 id="all-h" class="label">Weitere Projekte</h2><div class="list">${others.map(projRow).join("")}</div></section>`;
+      if (resting.length) h += `<details class="group"${others.length || !s ? " open" : ""}><summary class="label">Ruhen gerade (${resting.length})</summary><div class="list">${resting.map(projRow).join("")}</div></details>`;
+      if (finished.length) h += `<details class="group" id="finished-group"><summary class="label">Abgeschlossen (${finished.length})</summary><div class="list">${finished.map(projRow).join("")}</div></details>`;
+      h += `<section class="quote"><span class="mark" aria-hidden="true">“</span><p>Du musst nicht alles auf einmal schaffen. Ein Schritt zählt.</p><span class="label">Weniger ist mehr</span></section>`;
+      return h;
+    },
+
+    project() {
+      const p = find(view.id); if (!p) { view = { name: "home" }; return VIEWS.home(); }
+      if (p.finished) return VIEWS.finished();
+      const c = current(p);
+      const past = p.saves.slice(0, -1).reverse();
+      let h = `<header class="top"><span class="eyebrow" style="--dot: var(${"--" + ({c0:"sage",c1:"coral",c2:"lavender",c3:"mustard",c4:"sky",c5:"rose",c6:"teal"})[colorOf(p)]})">${p.example ? "Beispiel" : "Projekt"}${p.paused ? " · ruht" : ""}</span>
+        <div class="row"><button class="pill" data-action="menu" data-id="${esc(p.id)}" aria-expanded="${view.menu ? "true" : "false"}">Mehr</button><button class="pill" data-action="home">${BACK("Übersicht")}</button></div></header>`;
+      h += `<section class="stage" aria-labelledby="p-h">
+        <p class="proj-title">${esc(p.name)}</p>
+        <h2 id="p-h" class="title md">Hier warst du <em>stehen geblieben.</em></h2>
+        ${c && !p.paused && now() - c.at > 7 * DAY ? `<div class="card tint welcome" id="welcome"><p class="wt">Du bist nicht <em>hinterher.</em></p><p>Schön, dass du wieder da bist. Du musst nichts aufholen, nur diesen einen Schritt.</p>
+          <div class="chips"><span class="chip-static">Kein Aufholen</span><span class="chip-static">Lücken sind normal</span><span class="chip-static">Ein Schritt reicht</span></div></div>` : ""}
+        ${c ? `${c.where ? `<p class="where">${esc(c.where)}</p>` : ""}
+        <div class="card tint stepcard">
+          <span class="label">Dein nächster Mini-Schritt</span>
+          <p class="big-step" id="next-step">${esc(c.next)}</p>
+          <p class="small">Speicherpunkt ${p.saves.length} · ${esc(stamp(c.at))} · ${esc(ago(c.at))}${p.remindAt && !p.paused ? ` · Erinnerung ${esc(remindLabel(p.remindAt))}` : ""}</p>
+          ${p.remindAt && !p.paused && p.remindAt > now() ? `<button type="button" class="ghostlink small-link" data-action="ics">Erinnerung im Kalender eintragen</button>` : ""}
+        </div>` : `<p>Noch kein Speicherpunkt.</p>`}
+      </section>`;
+      if (view.edit && c) {
+        h += `<form class="panel" data-form="edit-step">
+          <div class="field"><label for="f-step">Schritt kleiner machen</label>
+          <input type="text" id="f-step" name="next" value="${esc(c.next)}" maxlength="200" required data-autofocus>
+          <div class="hint">So klein, dass er fast lächerlich ist. Zum Beispiel nur die Datei öffnen.</div>
+          <div class="suggest" data-target="f-step"><button type="button" class="suggest-btn" data-action="suggest" data-mode="smaller"><span aria-hidden="true">✦</span> Kleinere Schritte vorschlagen</button><div class="sugg-list" id="sugg" aria-live="polite"></div></div></div>
+          <div class="row"><button class="primary" type="submit">Übernehmen</button><button type="button" data-action="cancel-edit">Abbrechen</button></div>
+        </form>`;
+      } else if (p.paused) {
+        h += `<div class="row stack"><button class="primary" data-action="resume" data-id="${esc(p.id)}">Aufwecken ${ARROW}</button></div>`;
+      } else {
+        h += `<div class="row stack">
+          <button class="primary" data-action="start" data-id="${esc(p.id)}" ${c ? "" : "disabled"}>Ich fange an ${ARROW}</button>
+          <div class="row"><button data-action="edit" ${c ? "" : "disabled"}>Schritt kleiner machen</button>
+          <button data-action="save" data-id="${esc(p.id)}">Neuer Speicherpunkt</button></div></div>`;
+      }
+      if (view.menu) h += menuHtml(p);
+      if (past.length) {
+        h += `<details class="history"><summary class="label">Frühere Speicherpunkte (${past.length})</summary><ol class="timeline" reversed>${past.map(sv => `<li>
+          <span class="dotm${sv.done ? "" : " open"}" aria-hidden="true"></span>
+          <span class="small">${esc(stamp(sv.at))}${sv.done ? " · erledigt" : ""}</span>
+          ${sv.where ? `<p class="was">${esc(sv.where)}</p>` : ""}
+          ${sv.final ? "" : `<p class="then">Nächster Schritt: ${sv.done ? `<s>${esc(sv.next)}</s>` : esc(sv.next)}</p>`}</li>`).join("")}</ol></details>`;
+      }
+      return h;
+    },
+
+    finished() {
+      const p = find(view.id); if (!p) { view = { name: "home" }; return VIEWS.home(); }
+      const c = current(p);
+      const days = Math.max(1, Math.round((startOfDay(p.finished) - startOfDay(p.created)) / DAY) + 1);
+      let h = `<header class="top"><span class="eyebrow">Fertig</span><div class="row"><button class="pill" data-action="menu" data-id="${esc(p.id)}" aria-expanded="${view.menu ? "true" : "false"}">Mehr</button><button class="pill" data-action="home">${BACK("Übersicht")}</button></div></header>
+      <section class="focus done-stage" aria-labelledby="fin-h">
+        <div class="ring" aria-hidden="true"></div>
+        <h2 id="fin-h" class="label">Abgeschlossen · ${esc(fmtDay.format(p.finished))}</h2>
+        <p class="huge">${esc(p.name)}</p>
+        <p class="title md center">Gut <em>gemacht.</em></p>
+        <p class="small" id="fin-stats">${p.saves.length} ${p.saves.length === 1 ? "Speicherpunkt" : "Speicherpunkte"} · ${days} ${days === 1 ? "Tag" : "Tage"} vom Start bis zum Ziel</p>
+        ${c && c.where ? `<p class="where" style="text-align:left">${esc(c.where)}</p>` : ""}
+      </section>
+      <div class="row stack"><button class="primary" data-action="home">Zur Übersicht</button>
+      <button data-action="reopen" data-id="${esc(p.id)}">Wieder öffnen</button></div>`;
+      if (view.menu) h += menuHtml(p);
+      return h;
+    },
+
+    focus() {
+      const p = find(view.id); if (!p) { view = { name: "home" }; return VIEWS.home(); }
+      const c = current(p);
+      const t = view.timer;
+      return `<header class="top"><span class="eyebrow">${esc(p.name)}</span><button class="pill" data-action="open" data-id="${esc(p.id)}">${BACK("Zurück")}</button></header>
+      <section class="focus" aria-labelledby="f-h">
+        ${t ? timerRing(t) : `<div class="ring" aria-hidden="true"></div>`}
+        <h2 id="f-h" class="title md center">Nur <em>das hier.</em></h2>
+        <p class="huge">${esc(c.next)}</p>
+        ${t ? `<p class="small" id="timer-note" aria-live="polite">${t.end <= now() ? "Zeit ist um. Du hast angefangen, das zählt." : "Timer läuft. Der Bildschirm bleibt an, wenn dein Gerät das erlaubt."}</p>
+          <div class="row timer-row"><button class="chip" data-action="timer-stop">${t.end <= now() ? "Timer schliessen" : "Timer stoppen"}</button></div>`
+        : `<p class="small" id="since">${mins(view.since)}</p>
+          <div class="timer-pick"><span class="flabel" id="tl">Mit Timer?</span>
+            <div class="chips" role="group" aria-labelledby="tl">${[5, 10, 25].map(m => `<button type="button" class="chip" data-action="timer" data-min="${m}">${m} Min.</button>`).join("")}</div></div>`}
+      </section>
+      <div class="row stack"><button class="primary" data-action="done" data-id="${esc(p.id)}">Geschafft ${ARROW}</button>
+      <button data-action="save" data-id="${esc(p.id)}">Unterbrechen und speichern</button></div>`;
+    },
+
+    save() {
+      const isNew = view.isNew;
+      const p = isNew ? null : find(view.id);
+      if (!isNew && !p) { view = { name: "home" }; return VIEWS.home(); }
+      const draft = view.draft || {};
+      const rk = draft.remind || "none";
+      const head = isNew ? `Neues <em>Projekt.</em>` : view.reopen ? `Wieder öffnen: Wie geht es <em>weiter?</em>` : view.afterDone ? `Geschafft. Was kommt als <em>Nächstes?</em>` : `Speicherpunkt <em>setzen.</em>`;
+      return `<header class="top"><span class="eyebrow">${p ? esc(p.name) : "Neues Projekt"}</span><button class="pill" data-action="${isNew ? "home" : "open"}" ${p ? `data-id="${esc(p.id)}"` : ""}>${BACK("Abbrechen")}</button></header>
+      <h2 class="title md">${head}</h2>
+      <form class="panel" data-form="save" novalidate>
+        ${view.afterDone ? `<div class="card tint finish-offer"><p class="ft">War das der <em>letzte</em> Schritt?</p>
+          <button type="button" class="finish-btn" data-action="finish" data-id="${esc(p.id)}">Projekt abschliessen</button>
+          <p class="hint">Optional kannst du unten notieren, wie es ausgegangen ist. Sonst halte fest, wie es weitergeht.</p></div>` : ""}
+        ${isNew ? `<div class="field"><label for="f-name">Wie heisst das Projekt?</label>
+          <input type="text" id="f-name" name="name" maxlength="80" value="${esc(draft.name || "")}" data-autofocus placeholder="z. B. Steuererklärung"></div>` : ""}
+        <div class="field"><label for="f-where">Wo stehst du gerade?</label>
+          <textarea id="f-where" name="where" maxlength="1000" placeholder="Ein, zwei Sätze für dein zukünftiges Ich." ${isNew ? "" : "data-autofocus"}>${esc(draft.where || "")}</textarea>
+          <div class="hint">Optional. Auf dem Handy kannst du mit dem Mikrofon der Tastatur diktieren.</div></div>
+        <div class="field"><label for="f-next">Nächster Mini-Schritt</label>
+          <input type="text" id="f-next" name="next" maxlength="200" value="${esc(draft.next || "")}" placeholder="So klein, dass er fast lächerlich ist">
+          <div class="error" id="err" ${view.err ? "" : "hidden"}>${esc(view.err || "")}</div>
+          <div class="suggest" data-target="f-next"><button type="button" class="suggest-btn" data-action="suggest" data-mode="${isNew ? "new" : view.reopen ? "reopen" : view.afterDone ? "done" : "next"}"><span aria-hidden="true">✦</span> Schritt vorschlagen</button><div class="sugg-list" id="sugg" aria-live="polite"></div></div></div>
+        <div class="field"><span class="flabel" id="r-l">Erinnern</span>
+          <div class="chips" role="group" aria-labelledby="r-l">${REMIND.map(r => `<button type="button" class="chip" data-action="remind" data-k="${r.k}" aria-pressed="${rk === r.k}">${r.label}</button>`).join("")}</div>
+          <div class="hint">Die Erinnerung erscheint hier in der App. Für eine Benachrichtigung auf dem Handy trag sie zusätzlich in deinen Kalender ein.</div>
+          <button type="button" class="ghostlink small-link" data-action="ics-draft" ${rk === "none" ? "hidden" : ""}>Im Kalender eintragen</button></div>
+        <button class="primary wide" type="submit">Speichern ${ARROW}</button>
+      </form>`;
+    },
+
+    settings() {
+      const where = storage === "local" ? "nur auf diesem Gerät, in diesem Browser. Niemand sonst sieht sie. Melde dich oben an, damit sie auch auf deinen anderen Geräten erscheinen." : "nur vorübergehend. Dieser Browser erlaubt kein Speichern (zum Beispiel im privaten Modus), mach deshalb eine Sicherung.";
+      return `<header class="top"><span class="eyebrow">Einstellungen</span><button class="pill" data-action="home">${BACK("Übersicht")}</button></header>
+      <h2 class="title md">Alles an <em>einem Ort.</em></h2>
+      <div class="settings-list">
+      ${accountPanel()}
+      <section class="panel"><h2>Speicherort</h2><p id="storage-info">${session ? `Deine Daten liegen auf diesem Gerät und in deinem Konto. So erscheinen sie auf allen Geräten, auf denen du angemeldet bist.` : `Deine Daten liegen ${where}`}</p></section>
+      <section class="panel"><h2>Als App installieren</h2>
+        <div class="howto"><span class="num c4">1</span><p><strong>iPhone:</strong> In Safari auf Teilen tippen, dann „Zum Home-Bildschirm“.</p>
+        <span class="num c0">2</span><p><strong>Android:</strong> In Chrome im Menü „App installieren“ oder „Zum Startbildschirm hinzufügen“.</p></div>
+        <p class="hint">Danach öffnet sich Speicherpunkt wie eine normale App und funktioniert auch ohne Internet.</p></section>
+      <section class="panel"><h2>Sicherung</h2>
+        <p>Kopiert alle Projekte als Text. Leg ihn irgendwo ab, etwa in einer Notiz, und füge ihn auf einem anderen Gerät wieder ein.</p>
+        <div class="row"><button data-action="export">Sicherung kopieren</button></div>
+        <textarea id="f-export" readonly hidden aria-label="Sicherung als Text"></textarea>
+      </section>
+      <form class="panel" data-form="import"><h2>Sicherung einfügen</h2>
+        <div class="field"><label for="f-import">Sicherungstext</label>
+        <textarea id="f-import" name="data" placeholder="Hier den kopierten Text einfügen"></textarea></div>
+        <div class="error" id="imp-err" ${view.err ? "" : "hidden"}>${esc(view.err || "")}</div>
+        ${view.importConfirm ? `<p id="imp-confirm">Das ersetzt deine ${state.projects.length} Projekte durch die Sicherung. Fortfahren?</p>
+        <div class="row"><button class="primary" type="submit">Ja, ersetzen</button><button type="button" data-action="imp-no">Abbrechen</button></div>`
+        : `<div class="row"><button type="submit">Einfügen und ersetzen</button></div>`}
+      </form>
+      <section class="panel"><h2>Alles löschen</h2>
+        ${confirmFor === "wipe" ? `<p>Wirklich alle Projekte löschen? Das lässt sich nicht rückgängig machen.</p>
+          <div class="row"><button class="primary" data-action="wipe-yes">Ja, alles löschen</button><button data-action="wipe-no">Abbrechen</button></div>`
+        : `<div class="row"><button data-action="wipe">Alle Projekte löschen</button></div>`}
+      </section></div>
+      <nav class="legal" aria-label="Rechtliches"><a href="willkommen/">Über Speicherpunkt</a><a href="datenschutz.html">Datenschutz</a><a href="impressum.html">Impressum</a></nav>
+      <p class="small center version" id="version">Speicherpunkt · Version ${APP_VERSION}</p>`;
+    }
+  };
+
+  function accountPanel() {
+    if (!SYNC_ON) return `<section class="panel" id="account"><h2>Auf allen Geräten</h2><p>${esc(syncLabel())}</p></section>`;
+    if (session && view.authMode === "newpass") {
+      return `<form class="panel" id="account" data-form="newpass" novalidate><h2>Neues Passwort setzen</h2>
+        <p>Angemeldet als <strong>${esc(session.user.email || "")}</strong>. Wähle jetzt ein neues Passwort.</p>
+        <div class="field"><label for="f-newpass">Neues Passwort</label><input type="password" id="f-newpass" autocomplete="new-password" minlength="6" data-autofocus>
+          <div class="hint">Mindestens 6 Zeichen.</div></div>
+        <div class="error" id="auth-err" ${view.authErr ? "" : "hidden"}>${esc(view.authErr || "")}</div>
+        <div class="row"><button class="primary" type="submit" ${view.authBusy ? "disabled" : ""}>Passwort speichern</button></div>
+      </form>`;
+    }
+    if (session) {
+      return `<section class="panel" id="account"><h2>Konto</h2>
+        <p>Angemeldet als <strong id="acc-email">${esc(session.user.email || "")}</strong></p>
+        <p class="small"><span class="sync-dot" id="sync-dot" data-s="${sync.state}" aria-hidden="true"></span> <span id="sync-status">${esc(syncLabel())}</span></p>
+        ${confirmFor === "logout" ? `<p>Beim Abmelden verschwinden deine Projekte von diesem Gerät. In deinem Konto bleiben sie gespeichert.</p>
+          <div class="row"><button class="primary" data-action="logout-yes">Abmelden</button><button data-action="logout-no">Abbrechen</button></div>`
+        : confirmFor === "logout-unsynced" ? `<p id="logout-warn" class="error">Ein paar Änderungen auf diesem Gerät sind noch nicht in deinem Konto, weil gerade keine Verbindung besteht. Wenn du dich jetzt abmeldest, gehen sie verloren.</p>
+          <div class="row"><button data-action="sync-now">Nochmals abgleichen</button><button data-action="logout-force">Trotzdem abmelden</button><button data-action="logout-no">Abbrechen</button></div>`
+        : confirmFor === "delete-account" ? `<div class="danger-zone" id="delete-box"><p><strong>Konto endgültig löschen?</strong> Dein Konto und alle Projekte darin werden gelöscht, auf allen Geräten. Das lässt sich nicht rückgängig machen.</p>
+            <div class="field"><label for="f-delete">Zur Bestätigung „löschen“ eintippen</label><input type="text" id="f-delete" autocomplete="off" autocapitalize="off" spellcheck="false" data-autofocus></div>
+            <div class="error" id="delete-err" ${view.deleteErr ? "" : "hidden"}>${esc(view.deleteErr || "")}</div>
+            <div class="row"><button class="danger" data-action="delete-account-yes" ${view.authBusy ? "disabled" : ""}>Konto endgültig löschen</button><button data-action="logout-no">Abbrechen</button></div></div>`
+        : `<div class="row"><button data-action="sync-now">Jetzt abgleichen</button><button data-action="logout">Abmelden</button></div>
+          <button type="button" class="ghostlink small-link" data-action="delete-account">Konto löschen</button>`}
+      </section>`;
+    }
+    const mode = view.authMode === "signup" || view.authMode === "reset" ? view.authMode : "login";
+    if (mode === "reset") {
+      return `<form class="panel" id="account" data-form="reset" novalidate><h2>Passwort zurücksetzen</h2>
+        <p>Gib deine E-Mail-Adresse ein. Du bekommst einen Link, mit dem du ein neues Passwort setzen kannst.</p>
+        <div class="field"><label for="f-email">E-Mail</label><input type="text" id="f-email" name="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" value="${esc(view.authEmail || "")}"></div>
+        <div class="error" id="auth-err" ${view.authErr ? "" : "hidden"}>${esc(view.authErr || "")}</div>
+        ${view.authInfo ? `<p class="hint" id="auth-info">${esc(view.authInfo)}</p>` : ""}
+        <div class="row"><button class="primary" type="submit" ${view.authBusy ? "disabled" : ""}>Link schicken</button>
+        <button type="button" class="ghostlink" data-action="auth-login">Zurück zur Anmeldung</button></div>
+      </form>`;
+    }
+    return `<form class="panel" id="account" data-form="auth" novalidate><h2>${mode === "signup" ? "Konto erstellen" : "Anmelden"}</h2>
+      <p>Mit einem Konto erscheinen deine Projekte auf allen deinen Geräten. Jede Person hat ihr eigenes Konto und sieht nur ihre eigenen Projekte.</p>
+      <div class="field"><label for="f-email">E-Mail</label><input type="text" id="f-email" name="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" value="${esc(view.authEmail || "")}"></div>
+      <div class="field"><label for="f-pass">Passwort</label><input type="password" id="f-pass" name="password" autocomplete="${mode === "signup" ? "new-password" : "current-password"}" minlength="6">
+        ${mode === "signup" ? `<div class="hint">Mindestens 6 Zeichen.</div>` : ""}</div>
+      <div class="error" id="auth-err" ${view.authErr ? "" : "hidden"}>${esc(view.authErr || "")}</div>
+      ${view.authInfo ? `<p class="hint" id="auth-info">${esc(view.authInfo)}</p>` : ""}
+      <div class="row"><button class="primary" type="submit" ${view.authBusy ? "disabled" : ""}>${mode === "signup" ? "Konto erstellen" : "Anmelden"}</button>
+      <button type="button" class="ghostlink" data-action="auth-toggle">${mode === "signup" ? "Ich habe schon ein Konto" : "Neues Konto erstellen"}</button></div>
+      ${mode === "login" ? `<button type="button" class="ghostlink small-link" data-action="auth-reset">Passwort vergessen?</button>` : ""}
+      ${state.projects.length ? `<p class="hint">Deine ${state.projects.length} Projekte auf diesem Gerät werden beim Anmelden in dein Konto übernommen.</p>` : ""}
+      <p class="hint">Wie wir mit deinen Daten umgehen, steht in der <a href="datenschutz.html">Datenschutzerklärung</a>.</p>
+    </form>`;
+  }
+
+  function weekLine() {
+    const w = weekDone();
+    if (!w.steps && !w.finished) return "";
+    const parts = [];
+    if (w.steps) parts.push(`<strong>${w.steps}</strong> ${w.steps === 1 ? "Mini-Schritt" : "Mini-Schritte"} geschafft`);
+    if (w.finished) parts.push(`<strong>${w.finished}</strong> ${w.finished === 1 ? "Projekt" : "Projekte"} abgeschlossen`);
+    return `<p class="sub week" id="week">In den letzten 7 Tagen: ${parts.join(" und ")}.</p>`;
+  }
+
+  function projRow(p) {
+    const c = current(p), col = colorOf(p);
+    if (p.finished) {
+      return `<button class="proj finished ${col}" data-action="open" data-id="${esc(p.id)}">
+      <span class="num" aria-hidden="true">✓</span>
+      <span class="body"><span class="name">${esc(p.name)}</span>
+      <span class="small">Abgeschlossen am ${esc(fmtDay.format(p.finished))} · ${p.saves.length} ${p.saves.length === 1 ? "Speicherpunkt" : "Speicherpunkte"}</span></span>
+      <span class="go" aria-hidden="true">→</span></button>`;
+    }
+    return `<button class="proj ${col}${p.paused ? " resting" : ""}" data-action="open" data-id="${esc(p.id)}">
+      <span class="num" aria-hidden="true">${esc(initial(p))}</span>
+      <span class="body"><span class="name">${esc(p.name)}${isDue(p) ? ` <span class="tag">Erinnerung</span>` : ""}</span>
+      <span class="step">${esc(c ? c.next : "Noch kein Schritt")}</span>
+      <span class="small">${esc(ago(lastTouched(p)))} · ${p.saves.length} ${p.saves.length === 1 ? "Speicherpunkt" : "Speicherpunkte"}</span></span>
+      <span class="go" aria-hidden="true">→</span></button>`;
+  }
+
+  function menuHtml(p) {
+    if (confirmFor === "del:" + p.id) {
+      return `<section class="panel confirm" id="menu"><p>Projekt „${esc(p.name)}“ mit allen Speicherpunkten löschen?</p>
+        <div class="row"><button class="primary" data-action="del-yes" data-id="${esc(p.id)}">Ja, löschen</button><button data-action="del-no">Abbrechen</button></div></section>`;
+    }
+    if (view.rename) {
+      return `<form class="panel" id="menu" data-form="rename"><div class="field"><label for="f-rename">Neuer Name</label>
+        <input type="text" id="f-rename" name="name" value="${esc(p.name)}" maxlength="80" data-autofocus></div>
+        <div class="row"><button class="primary" type="submit">Umbenennen</button><button type="button" data-action="menu-close">Abbrechen</button></div></form>`;
+    }
+    if (p.finished) {
+      return `<section class="panel" id="menu"><div class="row">
+      <button data-action="reopen" data-id="${esc(p.id)}">Wieder öffnen</button>
+      <button data-action="rename">Umbenennen</button>
+      <button data-action="del" data-id="${esc(p.id)}">Löschen</button>
+      <button class="ghost" data-action="menu-close">Schliessen</button></div></section>`;
+    }
+    return `<section class="panel" id="menu"><div class="row">
+      <button data-action="finish" data-id="${esc(p.id)}">Abschliessen</button>
+      ${p.paused ? `<button data-action="resume" data-id="${esc(p.id)}">Aufwecken</button>` : `<button data-action="pause" data-id="${esc(p.id)}">Ruhen lassen</button>`}
+      <button data-action="rename">Umbenennen</button>
+      <button data-action="del" data-id="${esc(p.id)}">Löschen</button>
+      <button class="ghost" data-action="menu-close">Schliessen</button></div>
+      <p class="hint">Ruhen lassen heisst: kein Druck, keine Erinnerungen. Das Projekt wartet einfach. Abschliessen heisst: fertig, es braucht keinen nächsten Schritt mehr.</p></section>`;
+  }
+
+  // ---------- mutations ----------
+  function commit() { if (!showingExamplesOnly()) persist(); }
+  function showingExamplesOnly() { return state.projects.length === 0; }
+
+  function readSaveForm(form) {
+    return {
+      name: form.querySelector("#f-name") ? form.querySelector("#f-name").value.trim() : "",
+      where: form.querySelector("#f-where").value.trim(),
+      next: form.querySelector("#f-next").value.trim(),
+      remind: (view.draft && view.draft.remind) || "none"
+    };
+  }
+
+  function handleSave(form) {
+    const d = readSaveForm(form);
+    view.draft = d;
+    if (view.isNew && !d.name) { view.err = ""; return fieldError("f-name", "Gib dem Projekt einen Namen."); }
+    if (!d.next) return fieldError("f-next", "Schreib einen kleinen nächsten Schritt auf, damit du später leicht wieder einsteigst.");
+    const save = { id: uid(), at: now(), where: d.where, next: d.next };
+    let p;
+    if (view.isNew) {
+      p = { id: uid(), name: d.name, created: now(), paused: false, remindAt: remindFrom(d.remind), saves: [save] };
+      state.projects.push(p);
+      persist();
+      view = { name: "home" }; render();
+      toast("Projekt angelegt. Dein Speicherpunkt ist gesichert.");
+      return;
+    }
+    p = find(view.id);
+    if (!p) return gone();
+    if (view.afterDone) { const c = current(p); if (c) { c.done = true; c.doneAt = now(); } }
+    p.saves.push(save);
+    p.remindAt = remindFrom(d.remind);
+    p.paused = false;
+    p.finished = null;
+    commit();
+    view = { name: "home" }; render();
+    toast(p.example ? "Gespeichert (Beispiel, wird nicht dauerhaft gesichert)." : "Gespeichert. Hier geht es weiter, wann immer du bereit bist.");
+  }
+
+  function gone() {
+    view = { name: "home" }; confirmFor = null; render(); afterNav();
+    toast("Dieses Projekt gibt es nicht mehr. Vielleicht wurde es auf einem anderen Gerät gelöscht.");
+  }
+
+  function fieldError(id, msg) {
+    const err = $app.querySelector("#err");
+    if (id === "f-name") {
+      let e = $app.querySelector("#name-err");
+      if (!e) { e = document.createElement("div"); e.className = "error"; e.id = "name-err"; $app.querySelector("#f-name").after(e); }
+      e.textContent = msg;
+    } else if (err) { err.textContent = msg; err.hidden = false; }
+    const el = $app.querySelector("#" + id); if (el) { el.setAttribute("aria-invalid", "true"); el.focus(); }
+  }
+
+  // ---------- events ----------
+  const NEEDS_PROJECT = new Set(["start", "done", "snooze", "pause", "resume", "finish", "reopen", "save", "edit", "rename", "del", "del-yes", "menu"]);
+  $app.addEventListener("click", e => {
+    const b = e.target.closest("[data-action]"); if (!b || b.disabled) return;
+    const a = b.dataset.action, id = b.dataset.id;
+    if (NEEDS_PROJECT.has(a) && !find(id || view.id)) return gone();
+    switch (a) {
+      case "home": view = { name: "home" }; confirmFor = null; render(); afterNav(); break;
+      case "settings": view = { name: "settings" }; confirmFor = null; render(); afterNav(); break;
+      case "open": view = { name: "project", id }; confirmFor = null; render(); afterNav(); break;
+      case "new": view = { name: "save", isNew: true, draft: { remind: "3" } }; render(); afterNav(); break;
+      case "save": { const p = find(id), c = p && current(p); view = { name: "save", id, draft: { remind: "3", next: c && !c.done ? c.next : "" } }; render(); afterNav(); break; }
+      case "start": { const p = find(id); if (p) { p.remindAt = null; commit(); } view = { name: "focus", id, since: now() }; render(); afterNav(); break; }
+      case "done": celebrate(false); view = { name: "save", id, afterDone: true, draft: { remind: "none" } }; render(); afterNav(); break;
+      case "edit": view.edit = true; render(); break;
+      case "cancel-edit": view.edit = false; render(); break;
+      case "snooze": { const p = find(id); if (p) { p.remindAt = startOfDay(now()) + DAY + 8 * 3600000; commit(); render(); toast("Alles klar, morgen wieder."); } break; }
+      case "menu": { view.menu = !view.menu; view.rename = false; confirmFor = null; render(); const m = $app.querySelector("#menu"); if (m) m.scrollIntoView({ block: "nearest" }); break; }
+      case "menu-close": view.menu = false; view.rename = false; confirmFor = null; render(); break;
+      case "pause": { const p = find(id); p.paused = true; p.remindAt = null; commit(); view.menu = false; render(); toast("Das Projekt ruht. Es wartet einfach auf dich."); break; }
+      case "resume": { const p = find(id); p.paused = false; commit(); view.menu = false; render(); toast("Willkommen zurück."); break; }
+      case "rename": view.rename = true; render(); break;
+      case "finish": {
+        const p = find(id); if (!p) break;
+        const form = b.closest("form");
+        if (form && view.afterDone) {
+          const where = form.querySelector("#f-where").value.trim();
+          const c = current(p); if (c) { c.done = true; c.doneAt = now(); }
+          if (where) p.saves.push({ id: uid(), at: now(), where, next: "Abgeschlossen", done: true, final: true });
+        }
+        p.finished = now(); p.paused = false; p.remindAt = null;
+        commit(); view = { name: "project", id }; render(); afterNav();
+        celebrate(true); toast("Abgeschlossen. Gut gemacht.");
+        break;
+      }
+      case "reopen": {
+        const p = find(id); if (!p) break;
+        view = { name: "save", id, reopen: true, draft: { remind: "none", next: "" } }; render(); afterNav();
+        break;
+      }
+      case "del": { confirmFor = "del:" + id; render(); const m = $app.querySelector("#menu"); if (m) m.scrollIntoView({ block: "nearest" }); break; }
+      case "del-no": confirmFor = null; render(); break;
+      case "del-yes": {
+        if (find(id) && find(id).example) { examples = examples.filter(p => p.id !== id); }
+        else { state.projects = state.projects.filter(p => p.id !== id); tombstone(id); persist(); }
+        confirmFor = null; view = { name: "home" }; render(); toast("Projekt gelöscht."); break;
+      }
+      case "remind": {
+        const form = b.closest("form"); if (form) view.draft = Object.assign(readSaveForm(form), { remind: b.dataset.k });
+        form.querySelectorAll("[data-action=remind]").forEach(c => c.setAttribute("aria-pressed", String(c === b)));
+        const ib = form.querySelector("[data-action=ics-draft]"); if (ib) ib.hidden = b.dataset.k === "none";
+        break;
+      }
+      case "export": {
+        const txt = JSON.stringify(state);
+        const ta = $app.querySelector("#f-export");
+        const done = () => toast("Sicherung kopiert.");
+        const fallback = () => { ta.hidden = false; ta.value = txt; ta.focus(); ta.select(); toast("Text markiert. Kopiere ihn von Hand."); };
+        try { navigator.clipboard.writeText(txt).then(done, fallback); } catch { fallback(); }
+        break;
+      }
+      case "wipe": confirmFor = "wipe"; render(); break;
+      case "suggest": runSuggest(b); break;
+      case "timer": startTimer(Number(b.dataset.min) || 10); break;
+      case "timer-stop": stopTimer(); render(); break;
+      case "ics": {
+        const p = find(view.id), c = p && current(p);
+        if (p && c && p.remindAt) downloadIcs({ id: p.id, name: p.name, next: c.next, where: c.where, at: p.remindAt });
+        break;
+      }
+      case "ics-draft": {
+        const form = b.closest("form"), d = readSaveForm(form), p = view.id ? find(view.id) : null;
+        const at = remindFrom((view.draft && view.draft.remind) || "none");
+        const name = p ? p.name : d.name;
+        if (!at) break;
+        if (!d.next) { fieldError("f-next", "Schreib zuerst den nächsten Mini-Schritt auf, er kommt in den Kalendereintrag."); break; }
+        downloadIcs({ id: p ? p.id : "neu-" + uid(), name: name || "Projekt", next: d.next, where: d.where, at });
+        break;
+      }
+      case "pick-sugg": {
+        const box = b.closest(".suggest"), input = $app.querySelector("#" + box.dataset.target);
+        if (input) { input.value = b.dataset.text; input.removeAttribute("aria-invalid"); input.focus(); }
+        box.querySelectorAll(".sugg").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        const err = $app.querySelector("#err"); if (err && box.dataset.target === "f-next") err.hidden = true;
+        break;
+      }
+      case "auth-reset": case "auth-login": {
+        const f = $app.querySelector("#f-email"); view.authEmail = f ? f.value.trim() : view.authEmail;
+        view.authMode = a === "auth-reset" ? "reset" : "login"; view.authErr = ""; view.authInfo = ""; render();
+        const fe = $app.querySelector("#f-email"); if (fe) fe.focus();
+        break;
+      }
+      case "auth-toggle": { const f = $app.querySelector("#f-email"); view.authEmail = f ? f.value.trim() : ""; view.authMode = (view.authMode === "signup") ? "login" : "signup"; view.authErr = ""; view.authInfo = ""; render(); break; }
+      case "sync-now": syncNow(true).then(() => { if (confirmFor === "logout-unsynced" && !hasPending()) { confirmFor = "logout"; render(); } }); break;
+      case "logout": confirmFor = "logout"; render(); break;
+      case "logout-no": confirmFor = null; view.deleteErr = ""; render(); break;
+      case "delete-account": confirmFor = "delete-account"; view.deleteErr = ""; render(); { const d = $app.querySelector("#delete-box"); if (d) d.scrollIntoView({ block: "nearest" }); } break;
+      case "delete-account-yes": {
+        const v = ($app.querySelector("#f-delete") || {}).value || "";
+        if (v.trim().toLowerCase() !== "löschen") { view.deleteErr = "Tippe „löschen“ ein, damit wir sicher sind."; render(); break; }
+        view.authBusy = true; view.deleteErr = ""; render();
+        deleteAccount().then(() => {
+          view = { name: "home" }; confirmFor = null; render(); afterNav(); toast("Dein Konto und alle Projekte darin sind gelöscht.");
+        }).catch(err => {
+          view.authBusy = false;
+          view.deleteErr = err && err.code === "offline" ? "Keine Verbindung. Das Löschen braucht Internet." : err && err.status === 404 ? "Das Löschen ist noch nicht eingerichtet (supabase-setup.sql fehlt)." : "Das Löschen hat nicht geklappt. Versuch es später nochmals.";
+          render(); const i = $app.querySelector("#f-delete"); if (i) i.value = v;
+        });
+        break;
+      }
+      case "logout-yes": case "logout-force": {
+        b.disabled = true;
+        signOut(a === "logout-force").then(r => {
+          if (r === "unsynced") { confirmFor = "logout-unsynced"; render(); return; }
+          confirmFor = null; view = { name: "settings" }; render(); toast("Abgemeldet.");
+        });
+        break;
+      }
+      case "imp-no": { view = { name: "settings" }; render(); break; }
+      case "wipe-no": confirmFor = null; render(); break;
+      case "wipe-yes": { const ids = state.projects.map(p => p.id); state.projects = []; ids.forEach(tombstone); examples = makeExamples(); persist(); } confirmFor = null; view = { name: "home" }; render(); toast("Alles gelöscht."); break;
+    }
+  });
+
+  $app.addEventListener("submit", e => {
+    e.preventDefault();
+    const form = e.target, kind = form.dataset.form;
+    if (kind === "save") handleSave(form);
+    else if (kind === "auth") {
+      const email = form.querySelector("#f-email").value.trim(), password = form.querySelector("#f-pass").value;
+      const mode = view.authMode || "login";
+      view.authEmail = email; view.authInfo = "";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { view.authErr = "Gib deine E-Mail-Adresse ein."; render(); return; }
+      if (password.length < 6) { view.authErr = "Das Passwort muss mindestens 6 Zeichen lang sein."; render(); return; }
+      view.authErr = ""; view.authBusy = true; render();
+      signIn(email, password, mode === "signup").then(res => {
+        view.authBusy = false;
+        if (res === "confirm") { view.authMode = "login"; view.authInfo = "Fast geschafft: Wir haben dir eine E-Mail geschickt. Bestätige deine Adresse und melde dich dann hier an."; render(); return; }
+        view = { name: "home" }; render(); afterNav();
+        toast(state.projects.length ? "Angemeldet. Deine Projekte sind abgeglichen." : "Angemeldet.");
+      }).catch(err => { view.authBusy = false; view.authErr = authError(err); render(); });
+    }
+    else if (kind === "reset") {
+      const email = form.querySelector("#f-email").value.trim();
+      view.authEmail = email; view.authInfo = "";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { view.authErr = "Gib deine E-Mail-Adresse ein."; render(); return; }
+      view.authErr = ""; view.authBusy = true; render();
+      requestReset(email).then(() => {
+        view.authBusy = false; view.authInfo = "Wenn es zu dieser Adresse ein Konto gibt, ist jetzt eine E-Mail unterwegs. Öffne den Link darin und setz dort ein neues Passwort."; render();
+      }).catch(err => { view.authBusy = false; view.authErr = authError(err); render(); });
+    }
+    else if (kind === "newpass") {
+      const pw = form.querySelector("#f-newpass").value;
+      if (pw.length < 6) { view.authErr = "Das Passwort muss mindestens 6 Zeichen lang sein."; render(); return; }
+      view.authErr = ""; view.authBusy = true; render();
+      setNewPassword(pw).then(() => {
+        view = { name: "home" }; render(); afterNav(); toast("Neues Passwort gespeichert. Du bist angemeldet.");
+      }).catch(err => { view.authBusy = false; view.authErr = authError(err); render(); });
+    }
+    else if (kind === "edit-step") {
+      const p = find(view.id), v = form.querySelector("#f-step").value.trim();
+      if (!p) return gone();
+      if (!v) return;
+      current(p).next = v; commit(); view.edit = false; render(); toast("Schritt angepasst.");
+    } else if (kind === "rename") {
+      const p = find(view.id), v = form.querySelector("#f-rename").value.trim();
+      if (!p) return gone();
+      if (!v) return;
+      p.name = v; commit(); view.menu = false; view.rename = false; render(); toast("Umbenannt.");
+    } else if (kind === "import") {
+      const raw = form.querySelector("#f-import").value.trim();
+      let s = null; try { s = JSON.parse(raw); } catch {}
+      if (valid(s)) normalize(s);
+      if (!valid(s) || (!s.projects.length && raw.length > 2 && !/"projects"\s*:\s*\[\s*\]/.test(raw))) { view = { name: "settings", err: "Das sieht nicht nach einer Sicherung aus. Füge den ganzen kopierten Text ein." }; render(); return; }
+      if (state.projects.length && !view.importConfirm) { view = { name: "settings", importConfirm: true, pending: raw }; render(); $app.querySelector("#f-import").value = raw; return; }
+      const incoming = new Set(s.projects.map(p => p.id));
+      state.projects.forEach(p => { if (!incoming.has(p.id)) tombstone(p.id); });
+      state.projects = s.projects; for (const id of incoming) delete state.deleted[id];
+      fp = {}; persist(); view = { name: "home" }; render(); toast("Sicherung eingefügt.");
+    }
+  });
+
+  $app.addEventListener("input", e => {
+    if (e.target.matches("[aria-invalid]")) e.target.removeAttribute("aria-invalid");
+  });
+
+  // live minute counter in focus view
+  setInterval(() => {
+    if (view.name === "focus") { const el = $app.querySelector("#since"); if (el) el.textContent = mins(view.since); }
+  }, 15000);
+
+  // ---------- boot ----------
+  const local = readLocal();
+  if (local) { state = normalize(local); storage = "local"; }
+  else { try { localStorage.setItem("speicherpunkt.test", "1"); localStorage.removeItem("speicherpunkt.test"); storage = "local"; } catch { storage = "memory"; } }
+  resetFingerprints();
+  if (SYNC_ON) session = readSession();
+  const authLink = SYNC_ON ? readAuthLink() : null;
+  render();
+  if (authLink) handleAuthLink(authLink);
+  else if (session) syncNow();
+  window.addEventListener("hashchange", () => { const l = SYNC_ON ? readAuthLink() : null; if (l) handleAuthLink(l); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncNow(); });
+  window.addEventListener("online", () => syncNow());
+  setInterval(() => { if (document.visibilityState === "visible") syncNow(); }, 60000);
+  // installierbare App: Offline-Cache und dauerhafter Speicher
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  }
+  if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(() => {}); }
+  // Mehrere Tabs: Änderungen aus einem anderen Tab übernehmen
+  window.addEventListener("storage", e => {
+    if (e.key === KEY) { const s = readLocal(); if (s) { state = normalize(s); resetFingerprints(); softRender(); } }
+    if (e.key === SKEY && SYNC_ON) {
+      const had = !!session; session = readSession();
+      if (!session && had) { sync = { state: "out", at: 0, msg: "" }; if (view.name === "settings") render(); }
+      if (session && !had) { syncNow(); if (view.name === "settings") render(); }
+    }
+  });
+})();
+</script>
+</body>
+</html>
