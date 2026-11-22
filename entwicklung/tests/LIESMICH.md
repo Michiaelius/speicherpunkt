@@ -9,11 +9,10 @@
 - `test_features.py` – Fokus-Timer, Kalendereintrag, Belohnung, Wochenzähler
 - `test_pages.py` – Landingpage mit Warteliste, Datenschutz, Impressum, Konto löschen
 - `fntest/run.mjs` – die Edge Function `suggest-step` mit simulierten Antworten
-- `fntest/api_run.mjs` – die Edge Function `api` (Schnittstelle für ZbiWeb), über 70 Fälle
-- `test_api.py` – Schnittstelle, App und Datenbank zusammen, gegen echtes Postgres und PostgREST
-  (dieselbe Software wie bei Supabase): Zugriffsregeln, Ratenbegrenzung, Abnahme aus `SCHNITTSTELLE.md`,
-  Token in der App, gleichzeitiges Schreiben von App und Schnittstelle, ältere Datenbank ohne `rev`.
+- `test_db.py` – App und Datenbank zusammen, gegen echtes Postgres und PostgREST (dieselbe Software wie bei Supabase):
+  Zugriffsregeln, Revisionszähler, gleichzeitiges Schreiben zweier Geräte, ältere Datenbank ohne `rev`,
+  Aufräumen der Schnittstelle aus Version 8, Konto löschen.
   Braucht Postgres (initdb, pg_ctl, psql) und PostgREST 12 (`POSTGREST=/pfad/zu/postgrest`), sonst übersprungen.
 
 `mock_supabase.py` spielt Supabase (Anmeldung, Datenbank, Edge Function) lokal nach.
-`lokal_supabase.py` startet für `test_api.py` ein echtes Postgres mit PostgREST (`supabase_stub.sql` ersetzt die Supabase-eigenen Teile).
+`lokal_supabase.py` startet für `test_db.py` ein echtes Postgres mit PostgREST (`supabase_stub.sql` ersetzt die Supabase-eigenen Teile).

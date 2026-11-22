@@ -13,8 +13,6 @@ class Store:
         self.rows = {}       # uid -> {data, updated_at, rev}
         self.no_rev = False  # True: Datenbank ohne rev-Spalte (supabase-setup.sql noch nicht neu ausgeführt)
         self.before_patch = None  # Testhaken: läuft vor einem bedingten Schreiben
-        self.api_tokens = {} # uid -> {token, erstellt, zuletzt}
-        self.api_missing = False
         self.down = False
         self.expires_in = 3600
         self.calls = []
@@ -144,19 +142,6 @@ class H(BaseHTTPRequestHandler):
                 if old and "on_conflict" not in q: return self.reply(409, {"code": "23505", "message": "duplicate key value violates unique constraint"})
                 S.rows[uid] = {"data": b["data"], "updated_at": b.get("updated_at", 0), "rev": (old.get("rev", 0) + 1) if old else 0}
                 return self.reply(201)
-            if u.path in ("/rest/v1/rpc/sp_api_token_new", "/rest/v1/rpc/sp_api_token_info", "/rest/v1/rpc/sp_api_token_revoke"):
-                uid = self.uid()
-                if not uid: return self.reply(401, {"message": "JWT expired"})
-                if S.api_missing: return self.reply(404, {"code": "PGRST202", "message": "Could not find the function"})
-                if u.path.endswith("_new"):
-                    tok = "sp_" + secrets.token_hex(32)
-                    S.api_tokens[uid] = {"token": tok, "erstellt": int(time.time() * 1000), "zuletzt": None}
-                    return self.reply(200, tok)
-                if u.path.endswith("_info"):
-                    t = S.api_tokens.get(uid)
-                    return self.reply(200, {"aktiv": True, "erstellt": t["erstellt"], "zuletzt": t["zuletzt"]} if t else {"aktiv": False})
-                S.api_tokens.pop(uid, None)
-                return self.reply(204)
         self.reply(404, {"message": "not found"})
 
     def do_PATCH(self):

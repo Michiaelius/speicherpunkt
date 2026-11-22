@@ -19,15 +19,11 @@ run "Passwort und E-Mail-Links" 300 test_auth.py auth
 run "Timer, Kalender, Belohnung" 300 test_features.py features
 run "Landingpage, Rechtstexte, Konto löschen" 300 test_pages.py pages
 # Braucht Postgres und PostgREST (Umgebungsvariable POSTGREST), sonst übersprungen
-run "Schnittstelle mit echter Datenbank" 600 test_api.py api
+run "Abgleich mit echter Datenbank" 600 test_db.py db
 echo "== Edge Function suggest-step =="
 cp "$APP/supabase/functions/suggest-step/index.ts" fntest/fn.mjs
 if (cd fntest && node run.mjs) | tee "$OUT-fn.log" | grep -q FAIL; then echo "FEHLER (siehe $OUT-fn.log)"; fail=1; else echo OK; fi
 rm -f fntest/fn.mjs
-echo "== Edge Function api =="
-cp "$APP/supabase/functions/api/index.ts" fntest/api.mjs
-if (cd fntest && node api_run.mjs) > "$OUT-apifn.log" 2>&1 && grep -q "ALL OK" "$OUT-apifn.log"; then echo OK; else echo "FEHLER (siehe $OUT-apifn.log)"; fail=1; fi
-rm -f fntest/api.mjs
 if grep -l "BITTE ERGÄNZEN\|BITTE PRÜFEN" "$APP"/*.html "$APP"/willkommen/*.html >/dev/null 2>&1; then
   echo "Hinweis: In diesen Seiten fehlen noch Angaben (gelb markiert):"; grep -l "BITTE ERGÄNZEN\|BITTE PRÜFEN" "$APP"/*.html "$APP"/willkommen/*.html
 fi

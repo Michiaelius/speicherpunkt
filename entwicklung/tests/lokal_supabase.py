@@ -1,8 +1,8 @@
 """Ein kleines, echtes Supabase zum Testen: Postgres + PostgREST (dieselbe Software wie bei Supabase)
-plus ein Ersatz für Anmeldung (GoTrue) und Gateway. Die Edge Function «api» läuft unter Node.
+plus ein Ersatz für Anmeldung (GoTrue) und Gateway.
 
-Braucht: Postgres 15 oder neuer (initdb, pg_ctl, psql), PostgREST 12 (Umgebungsvariable POSTGREST
-oder im PATH) und Node.js. Fehlt etwas, meldet available() den Grund und die Tests werden übersprungen.
+Braucht: Postgres 15 oder neuer (initdb, pg_ctl, psql) und PostgREST 12 (Umgebungsvariable POSTGREST
+oder im PATH). Fehlt etwas, meldet available() den Grund und die Tests werden übersprungen.
 """
 import os, shutil, subprocess, tempfile, time, json, hmac, hashlib, base64, secrets, threading, socket, pathlib
 import urllib.request, urllib.error
@@ -26,7 +26,6 @@ def available():
     missing = [n for n in ("initdb", "pg_ctl", "psql", "postgres") if not _pg_bin(n)]
     if missing: return False, "Postgres fehlt (" + ", ".join(missing) + ")"
     if not (os.environ.get("POSTGREST") or shutil.which("postgrest")): return False, "PostgREST fehlt (Umgebungsvariable POSTGREST setzen)"
-    if not shutil.which("node"): return False, "Node.js fehlt"
     return True, ""
 
 
@@ -59,7 +58,7 @@ class Local:
         self.procs = []
         self.users = {}           # email -> {id, password}
         self.refresh = {}         # refresh -> (uid, email)
-        self.after_state_get = None   # Testhaken: läuft nach dem Lesen von sp_state, bevor die App die Antwort bekommt
+        self.after_state_get = None   # Testhaken: läuft nach dem Lesen von sp_state, bevor die App die Antwort bekommt (z. B. ein zweites Gerät schreibt)
         self.calls = []
         self.expires_in = 3600
 
@@ -103,12 +102,6 @@ class Local:
         self.gw = ThreadingHTTPServer(("127.0.0.1", 0), _gateway(self))
         threading.Thread(target=self.gw.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.gw.server_address[1]}"
-        # Edge Function «api» unter Node
-        self.fn_port = free_port()
-        fn = self.tmp / "api.mjs"; shutil.copy(APP / "supabase/functions/api/index.ts", fn)
-        self.procs.append(subprocess.Popen(["node", str(HERE / "fntest/serve.mjs"), str(self.fn_port), str(fn), self.url],
-                                           stdout=open(self.tmp / "fn.log", "w"), stderr=subprocess.STDOUT))
-        self._wait(f"http://127.0.0.1:{self.fn_port}/api", "Edge Function", ok_codes=(401,))
         return self
 
     def _wait(self, url, name, ok_codes=(200,)):
@@ -184,9 +177,6 @@ def _gateway(L):
         def handle_any(self):
             u = urlparse(self.path); data = self.body()
             L.calls.append((self.command, u.path))
-            if u.path.startswith("/functions/v1/"):
-                st, raw, h = self.forward(f"http://127.0.0.1:{L.fn_port}" + self.path[len("/functions/v1"):], data)
-                return self.reply(st, raw=raw, headers=h)
             if self.headers.get("apikey") != KEY: return self.reply(401, {"message": "Invalid API key"})
             if u.path.startswith("/rest/v1/"):
                 st, raw, h = self.forward(f"http://127.0.0.1:{L.rest_port}" + self.path[len("/rest/v1"):], data)
